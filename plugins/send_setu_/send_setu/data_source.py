@@ -1,18 +1,21 @@
-from configs.path_config import IMAGE_PATH, TEMP_PATH
-from utils.message_builder import image
-from services.log import logger
-from utils.image_utils import get_img_hash, compressed_image
-from utils.utils import change_img_md5
-from asyncpg.exceptions import UniqueViolationError
-from asyncio.exceptions import TimeoutError
-from typing import List, Optional
-from configs.config import NICKNAME, Config
-from utils.http_utils import AsyncHttpx
-from .._model import Setu
 import asyncio
 import os
 import random
 import re
+from asyncio.exceptions import TimeoutError
+from typing import List, Optional
+
+from asyncpg.exceptions import UniqueViolationError
+
+from configs.config import NICKNAME, Config
+from configs.path_config import IMAGE_PATH, TEMP_PATH
+from services.log import logger
+from utils.http_utils import AsyncHttpx
+from utils.image_utils import compressed_image, get_img_hash
+from utils.message_builder import image
+from utils.utils import change_img_md5
+
+from .._model import Setu
 
 try:
     import ujson as json
@@ -108,10 +111,7 @@ async def search_online_setu(
             ):
                 continue
             if id_ is not None:
-                if (
-                    os.path.getsize(path_ / f"{index}.jpg")
-                    > 1024 * 1024 * 1.5
-                ):
+                if os.path.getsize(path_ / f"{index}.jpg") > 1024 * 1024 * 1.5:
                     compressed_image(
                         path_ / f"{index}.jpg",
                     )
@@ -206,7 +206,11 @@ def get_luoxiang(impression):
     if probability < random.randint(1, 101):
         return (
             "我为什么要给你发这个？"
-            + image(random.choice(os.listdir(IMAGE_PATH / "luoxiang")), "luoxiang")
+            + image(
+                IMAGE_PATH
+                / "luoxiang"
+                / random.choice(os.listdir(IMAGE_PATH / "luoxiang"))
+            )
             + f"\n(快向{NICKNAME}签到提升好感度吧！)"
         )
     return None

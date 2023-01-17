@@ -80,28 +80,33 @@ async def _(bot: Bot, event: GroupMessageEvent, arg: Message = CommandArg()):
             await use_props.finish(f"道具数量不足，无法使用{num}次！")
         if num > (n := func_manager.get_max_num_limit(name)):
             await use_props.finish(f"该道具单次只能使用 {n} 个！")
-        model, kwargs = build_params(bot, event, name, num, text)
         try:
-            await func_manager.run_handle(type_="before_handle", param=model, **kwargs)
-        except NotMeetUseConditionsException as e:
-            await use_props.finish(e.get_info(), at_sender=True)
-        async with db.transaction():
-            if await BagUser.delete_property(event.user_id, event.group_id, name, num):
-                if func_manager.check_send_success_message(name):
-                    await use_props.send(f"使用道具 {name} {num} 次成功！", at_sender=True)
-                if msg := await effect(bot, event, name, num, text, event.message):
-                    await use_props.send(msg, at_sender=True)
-                logger.info(
-                    f"USER {event.user_id} GROUP {event.group_id} 使用道具 {name} {num} 次成功"
-                )
-                await UserShopGoldLog.add_shop_log(
-                    event.user_id, event.group_id, 1, name, num
-                )
-            else:
-                await use_props.send(f"使用道具 {name} {num} 次失败！", at_sender=True)
-                logger.info(
-                    f"USER {event.user_id} GROUP {event.group_id} 使用道具 {name} {num} 次失败"
-                )
-        await func_manager.run_handle(type_="after_handle", param=model, **kwargs)
+            model, kwargs = build_params(bot, event, name, num, text)
+        except KeyError:
+            logger.warning(f"{name} 未注册使用函数")
+            await use_props.finish(f"{name} 未注册使用方法")
+        else:
+            try:
+                await func_manager.run_handle(type_="before_handle", param=model, **kwargs)
+            except NotMeetUseConditionsException as e:
+                await use_props.finish(e.get_info(), at_sender=True)
+            async with db.transaction():
+                if await BagUser.delete_property(event.user_id, event.group_id, name, num):
+                    if func_manager.check_send_success_message(name):
+                        await use_props.send(f"使用道具 {name} {num} 次成功！", at_sender=True)
+                    if msg := await effect(bot, event, name, num, text, event.message):
+                        await use_props.send(msg, at_sender=True)
+                    logger.info(
+                        f"USER {event.user_id} GROUP {event.group_id} 使用道具 {name} {num} 次成功"
+                    )
+                    await UserShopGoldLog.add_shop_log(
+                        event.user_id, event.group_id, 1, name, num
+                    )
+                else:
+                    await use_props.send(f"使用道具 {name} {num} 次失败！", at_sender=True)
+                    logger.info(
+                        f"USER {event.user_id} GROUP {event.group_id} 使用道具 {name} {num} 次失败"
+                    )
+            await func_manager.run_handle(type_="after_handle", param=model, **kwargs)
     else:
         await use_props.send("您的背包里没有任何的道具噢", at_sender=True)

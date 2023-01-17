@@ -1,20 +1,23 @@
-from datetime import datetime, timedelta
-from .config import *
-from services.log import logger
-from services.db_context import db
-from .models.open_cases_user import OpenCasesUser
-from models.sign_group_user import SignGroupUser
-from utils.message_builder import image
-import pypinyin
-import random
-from .utils import get_price
-from .models.buff_prices import BuffPrice
-from PIL import Image
-from utils.image_utils import alpha2white_pil, BuildImage
-from configs.path_config import IMAGE_PATH
 import asyncio
-from utils.utils import cn2py
+import random
+from datetime import datetime, timedelta
+
+import pypinyin
+from PIL import Image
+
 from configs.config import Config
+from configs.path_config import IMAGE_PATH
+from models.sign_group_user import SignGroupUser
+from services.db_context import db
+from services.log import logger
+from utils.image_utils import BuildImage, alpha2white_pil
+from utils.message_builder import image
+from utils.utils import cn2py
+
+from .config import *
+from .models.buff_prices import BuffPrice
+from .models.open_cases_user import OpenCasesUser
+from .utils import get_price
 
 
 async def open_case(user_qq: int, group: int, case_name: str = "狂牙大行动") -> str:
@@ -121,7 +124,7 @@ async def open_case(user_qq: int, group: int, case_name: str = "狂牙大行动"
         skin_name = cn2py(
             cskin_word.replace("|", "-").replace("（StatTrak™）", "").strip()
         )
-        img = image(f"{skin_name}.png", "cases/" + case)
+        img = image(IMAGE_PATH / "cases" / case / f"{skin_name}.png")
         #        if knifes_flag:
         #            await user.update(
         #                knifes_name=user.knifes_name + f"{skin} 磨损：{mosun}， 价格：{uplist[10]}"
@@ -135,11 +138,14 @@ async def open_case(user_qq: int, group: int, case_name: str = "狂牙大行动"
                 f"qq:{user_qq} 群:{group} 开启{case_name}武器箱 获得 {skin} 磨损：{mosun}， 价格：{uplist[10]}， 数据更新失败"
             )
         user = await OpenCasesUser.ensure(user_qq, group, for_update=True)
-        over_count = int(
-            Config.get_config("open_cases", "INITIAL_OPEN_CASE_COUNT")
-            + int(impression)
-            / Config.get_config("open_cases", "EACH_IMPRESSION_ADD_COUNT")
-        ) - user.today_open_total
+        over_count = (
+            int(
+                Config.get_config("open_cases", "INITIAL_OPEN_CASE_COUNT")
+                + int(impression)
+                / Config.get_config("open_cases", "EACH_IMPRESSION_ADD_COUNT")
+            )
+            - user.today_open_total
+        )
         return (
             f"开启{case_name}武器箱.\n剩余开箱次数：{over_count}.\n" + img + "\n" + f"皮肤:{skin}\n"
             f"磨损:{mosun:.9f}\n"
@@ -238,7 +244,6 @@ async def open_shilian_case(user_qq: int, group: int, case_name: str, num: int =
                 style=pypinyin.NORMAL,
             ):
                 skin_name += "".join(i)
-            # img = image(skin_name, "cases/" + case, "png")
             wImg = BuildImage(200, 270, 200, 200)
             wImg.paste(
                 alpha2white_pil(

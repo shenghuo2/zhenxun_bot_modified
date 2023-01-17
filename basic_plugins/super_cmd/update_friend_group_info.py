@@ -61,10 +61,10 @@ async def _():
     rst = ""
     fl = await get_bot().get_friend_list()
     for f in fl:
-        if await FriendUser.add_friend_info(f["user_id"], f["nickname"]):
-            logger.info(f'自动更新好友 {f["user_id"]} 信息成功')
-            num += 1
-        else:
-            logger.warning(f'自动更新好友 {f["user_id"]} 信息失败')
+        await FriendUser.create(user_id=f["user_id"], nickname=f["nickname"])
+        logger.info(f'自动更新好友 {f["user_id"]} 信息成功')
+        num += 1
+        # else:
+        #     logger.warning(f'自动更新好友 {f["user_id"]} 信息失败')
             rst += f'{f["user_id"]} 更新失败\n'
     await update_friend_info.send(f"成功更新了 {num} 个好友的信息\n{rst[:-1]}")

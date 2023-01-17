@@ -90,22 +90,22 @@ async def _(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):
             await nickname.send("设置昵称失败，请更新群组成员信息！", at_sender=True)
             logger.warning(f"USER {event.user_id} GROUP {event.group_id} 设置群昵称 {msg} 失败")
     else:
-        if await FriendUser.set_friend_nickname(event.user_id, msg):
-            await nickname.send(
-                random.choice(
-                    [
-                        f"好啦好啦，我知道啦，{msg}，以后就这么叫你吧",
-                        f"嗯嗯，{NICKNAME}记住你的昵称了哦，{msg}",
-                        f"好突然，突然要叫你昵称什么的...{msg}..",
-                        f"{NICKNAME}会好好记住{msg}的，放心吧",
-                        f"好..好.，那窝以后就叫你{msg}了.",
-                    ]
-                )
+        await FriendUser.set_friend_nickname(event.user_id, msg):
+        await nickname.send(
+            random.choice(
+                [
+                    f"好啦好啦，我知道啦，{msg}，以后就这么叫你吧",
+                    f"嗯嗯，{NICKNAME}记住你的昵称了哦，{msg}",
+                    f"好突然，突然要叫你昵称什么的...{msg}..",
+                    f"{NICKNAME}会好好记住{msg}的，放心吧",
+                    f"好..好.，那窝以后就叫你{msg}了.",
+                ]
             )
-            logger.info(f"USER {event.user_id} 设置昵称 {msg}")
-        else:
-            await nickname.send("设置昵称失败了，明天再来试一试！或联系管理员更新好友！", at_sender=True)
-            logger.warning(f"USER {event.user_id} 设置昵称 {msg} 失败")
+        )
+        logger.info(f"USER {event.user_id} 设置昵称 {msg}")
+        # else:
+        #     await nickname.send("设置昵称失败了，明天再来试一试！或联系管理员更新好友！", at_sender=True)
+        #     logger.warning(f"USER {event.user_id} 设置昵称 {msg} 失败")
 
 
 @my_nickname.handle()

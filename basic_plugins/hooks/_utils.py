@@ -12,7 +12,7 @@ from nonebot.adapters.onebot.v11 import (
 )
 from nonebot.exception import ActionFailed, IgnoredException
 from nonebot.internal.matcher import Matcher
-
+from services.log import logger
 from models.bag_user import BagUser
 from models.ban_user import BanUser
 from models.friend_user import FriendUser
@@ -345,6 +345,7 @@ class AuthChecker:
                             and plugin_name not in ignore_rst_module
                         ):
                             self._flmt_c.start_cd(event.group_id)
+                            logger.info(f"{event.user_id} ||XXXXXX: {matcher.module}")
                             await bot.send_group_msg(
                                 group_id=event.group_id, message="此功能正在维护..."
                             )

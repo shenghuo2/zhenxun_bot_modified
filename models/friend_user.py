@@ -1,16 +1,23 @@
-from services.db_context import db
+from tortoise import fields
+
 from configs.config import Config
+from services.db_context import Model
 
 
-class FriendUser(db.Model):
-    __tablename__ = "friend_users"
+class FriendUser(Model):
 
-    id = db.Column(db.Integer(), primary_key=True)
-    user_id = db.Column(db.BigInteger(), nullable=False)
-    user_name = db.Column(db.Unicode(), nullable=False, default="")
-    nickname = db.Column(db.Unicode())
+    id = fields.IntField(pk=True, generated=True, auto_increment=True)
+    """自增id"""
+    user_id = fields.BigIntField(null=False, unique=True)
+    """用户id"""
+    user_name = fields.CharField(null=False, max_length=255, default="")
+    """用户名称"""
+    nickname = fields.CharField(null=False, max_length=255)
+    """私聊下自定义昵称"""
 
-    _idx1 = db.Index("friend_users_idx1", "user_id", unique=True)
+    class Meta:
+        table = "friend_users"
+        table_description = "好友数据库"
 
     @classmethod
     async def get_user_name(cls, user_id: int) -> str:
@@ -20,54 +27,20 @@ class FriendUser(db.Model):
         参数:
             :param user_id: qq号
         """
-        query = cls.query.where(cls.user_id == user_id)
-        user = await query.gino.first()
-        if user:
+        if user := await cls.filter(user_id=user_id).first():
             return user.user_name
-        else:
-            return ""
+        return ""
 
     @classmethod
-    async def add_friend_info(cls, user_id: int, user_name: str) -> bool:
-        """
-        说明:
-            添加好友信息
-        参数:
-            :param user_id: qq号
-            :param user_name: 用户名称
-        """
-        try:
-            query = cls.query.where(cls.user_id == user_id)
-            user = await query.with_for_update().gino.first()
-            if not user:
-                await cls.create(
-                    user_id=user_id,
-                    user_name=user_name,
-                )
-            else:
-                await user.update(
-                    user_name=user_name,
-                ).apply()
-            return True
-        except Exception:
-            return False
-
-    @classmethod
-    async def delete_friend_info(cls, user_id: int) -> bool:
+    async def delete_friend_info(cls, user_id: int):
         """
         说明:
             删除好友信息
         参数:
             :param user_id: qq号
         """
-        try:
-            query = cls.query.where(cls.user_id == user_id)
-            user = await query.with_for_update().gino.first()
-            if user:
-                await user.delete()
-            return True
-        except Exception:
-            return False
+        if user := await cls.filter(user_id=user_id).first():
+            await user.delete()
 
     @classmethod
     async def get_friend_nickname(cls, user_id: int) -> str:
@@ -77,9 +50,7 @@ class FriendUser(db.Model):
         参数:
             :param user_id: qq号
         """
-        query = cls.query.where(cls.user_id == user_id)
-        user = await query.gino.first()
-        if user:
+        if user := await cls.filter(user_id=user_id).first():
             if user.nickname:
                 _tmp = ""
                 black_word = Config.get_config("nickname", "BLACK_WORD")
@@ -90,7 +61,7 @@ class FriendUser(db.Model):
         return ""
 
     @classmethod
-    async def set_friend_nickname(cls, user_id: int, nickname: str) -> bool:
+    async def set_friend_nickname(cls, user_id: int, nickname: str):
         """
         说明:
             设置用户昵称
@@ -98,18 +69,6 @@ class FriendUser(db.Model):
             :param user_id: qq号
             :param nickname: 昵称
         """
-        try:
-            query = cls.query.where(cls.user_id == user_id)
-            user = await query.with_for_update().gino.first()
-            if not user:
-                await cls.create(
-                    user_id=user_id,
-                    nickname=nickname,
-                )
-            else:
-                await user.update(
-                    nickname=nickname,
-                ).apply()
-            return True
-        except Exception:
-            return False
+        user, _ = await cls.get_or_create(user_id=user_id)
+        user.nickname = nickname
+        await user.save(update_fields=["nickname"])

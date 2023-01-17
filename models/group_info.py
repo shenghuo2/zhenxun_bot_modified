@@ -1,29 +1,32 @@
-from services.db_context import db
-from services.log import logger
 from typing import List, Optional
 
+from tortoise import fields
 
-class GroupInfo(db.Model):
+from services.db_context import Model
+from services.log import logger
+
+
+class GroupInfo(Model):
     __tablename__ = "group_info"
 
-    group_id = db.Column(db.BigInteger(), nullable=False, primary_key=True)
-    group_name = db.Column(db.Unicode(), nullable=False, default="")
-    max_member_count = db.Column(db.Integer(), nullable=False, default=0)
-    member_count = db.Column(db.Integer(), nullable=False, default=0)
-    group_flag = db.Column(db.Integer(), nullable=False, default=0)
+    # group_id = db.Column(db.BigInteger(), nullable=False, primary_key=True)
+    # group_name = db.Column(db.Unicode(), nullable=False, default="")
+    # max_member_count = db.Column(db.Integer(), nullable=False, default=0)
+    # member_count = db.Column(db.Integer(), nullable=False, default=0)
+    # group_flag = db.Column(db.Integer(), nullable=False, default=0)
 
-    _idx1 = db.Index("group_info_idx1", "group_id", unique=True)
+    # _idx1 = db.Index("group_info_idx1", "group_id", unique=True)
 
-    @classmethod
-    async def get_group_info(cls, group_id: int) -> "GroupInfo":
-        """
-        说明:
-            获取群信息
-        参数:
-            :param group_id: 群号
-        """
-        query = cls.query.where(cls.group_id == group_id)
-        return await query.gino.first()
+    group_id = fields.BigIntField(pk=True)
+    """群聊id"""
+    group_name = fields.TextField(null=False, default="")
+    """群聊名称"""
+    max_member_count = fields.IntField(null=False, default="")
+    """最大人数"""
+    member_count = fields.IntField(null=False, default=0)
+    """当前人数"""
+    group_flag: int = fields.IntField(null=False, default=0)
+    """群认证标记"""
 
     @classmethod
     async def add_group_info(

@@ -1,23 +1,25 @@
-from nonebot.adapters.onebot.v11 import (
-    Bot,
-    MessageEvent,
-    GROUP,
-    GroupMessageEvent,
-    Message,
-    ActionFailed,
-)
-from nonebot import on_command, on_regex
-from nonebot.permission import SUPERUSER
-from nonebot.typing import T_State
-from nonebot.rule import to_me
-from utils.utils import is_number
-from utils.manager import group_manager, plugins2settings_manager
-from models.group_info import GroupInfo
-from services.log import logger
-from configs.config import NICKNAME
-from nonebot.params import Command, CommandArg
 from typing import Tuple
 
+from nonebot import on_command, on_regex
+from nonebot.adapters.onebot.v11 import (
+    GROUP,
+    ActionFailed,
+    Bot,
+    GroupMessageEvent,
+    Message,
+    MessageEvent,
+)
+from nonebot.params import Command, CommandArg
+from nonebot.permission import SUPERUSER
+from nonebot.rule import to_me
+from nonebot.typing import T_State
+
+from configs.config import NICKNAME
+from models.group_info import GroupInfo
+from services.log import logger
+from utils.depends import OneCommand
+from utils.manager import group_manager, plugins2settings_manager
+from utils.utils import is_number
 
 __zx_plugin_name__ = "管理群操作 [Superuser]"
 __plugin_usage__ = """
@@ -171,34 +173,37 @@ async def _():
 
 
 @group_auth.handle()
-async def _(bot: Bot, cmd: Tuple[str, ...] = Command(), arg: Message = CommandArg()):
-    cmd = cmd[0]
+async def _(bot: Bot, cmd: str = OneCommand(), arg: Message = CommandArg()):
     msg = arg.extract_plain_text().strip().split()
     for group_id in msg:
         if not is_number(group_id):
-            await group_auth.send(f"{group_id}非纯数字，已跳过该项..")
+            await group_auth.send(f"{group_id}非纯数字，已跳过该项...")
+            continue
         group_id = int(group_id)
         if cmd[:2] == "添加":
-            if await GroupInfo.get_group_info(group_id):
-                await GroupInfo.set_group_flag(group_id, 1)
-            else:
-                try:
+            try:
+                if group := await GroupInfo.filter(group_id=group_id).first():
+                    await group.update_or_create(group_flag=1)
+                else:
                     group_info = await bot.get_group_info(group_id=group_id)
-                except ActionFailed:
-                    group_info = {
-                        "group_id": group_id,
-                        "group_name": "_",
-                        "max_member_count": -1,
-                        "member_count": -1,
-                    }
-                await GroupInfo.add_group_info(
-                    group_info["group_id"],
-                    group_info["group_name"],
-                    group_info["max_member_count"],
-                    group_info["member_count"],
-                    1,
-                )
+                    await GroupInfo.create(
+                        group_id=group_info["group_id"],
+                        group_name=group_info["group_name"],
+                        max_member_count=group_info["max_member_count"],
+                        member_count=group_info["member_count"],
+                        group_flag=1,
+                    )
+            except Exception as e:
+                await group_auth.send(f"添加群认证 {group_id} 发生错误！")
+                logger.error("添加群认证发生错误", cmd, group_id=group_id, e=e)
+            else:
+                await group_auth.send(f"已为 {group_id} {cmd[:2]}群认证..")
+                logger.info("添加群认证成功", cmd, group_id=group_id)
         else:
-            if await GroupInfo.get_group_info(group_id):
-                await GroupInfo.set_group_flag(group_id, 0)
-        await group_auth.send(f"已为 {group_id} {cmd[:2]}群认证..")
+            if group := await GroupInfo.filter(group_id=group_id).first():
+                await group.update_or_create(group_flag=0)
+                await group_auth.send(f"已删除 {group_id} 群认证..")
+                logger.info("删除群认证成功", cmd, group_id=group_id)
+            else:
+                await group_auth.send(f"未查找到群聊: {group_id}")
+                logger.info("未找到群聊", cmd, group_id=group_id)

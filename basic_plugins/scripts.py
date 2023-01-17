@@ -1,23 +1,23 @@
 import random
-
-from asyncpg.exceptions import (
-    DuplicateColumnError,
-    UndefinedColumnError,
-    PostgresSyntaxError,
-)
-from nonebot import Driver
-from services.db_context import db
-from models.group_info import GroupInfo
-from models.bag_user import BagUser
-from nonebot.adapters.onebot.v11 import Bot
-from services.log import logger
-from configs.path_config import TEXT_PATH
 from asyncio.exceptions import TimeoutError
 from typing import List
-from utils.http_utils import AsyncHttpx
-from utils.utils import GDict
-from utils.utils import scheduler
+
 import nonebot
+from asyncpg.exceptions import (
+    DuplicateColumnError,
+    PostgresSyntaxError,
+    UndefinedColumnError,
+)
+from nonebot import Driver
+from nonebot.adapters.onebot.v11 import Bot
+
+from configs.path_config import TEXT_PATH
+from models.bag_user import BagUser
+from models.group_info import GroupInfo
+from services.db_context import db
+from services.log import logger
+from utils.http_utils import AsyncHttpx
+from utils.utils import GDict, scheduler
 
 try:
     import ujson as json
@@ -97,49 +97,43 @@ async def _():
         ),  # bag_users 新增字段 property 替代 props
         (
             "ALTER TABLE genshin ADD auto_sign_time timestamp with time zone;",
-            "genshin"
+            "genshin",
         ),  # 新增原神自动签到字段
         (
             "ALTER TABLE genshin ADD resin_remind boolean DEFAULT False;",
-            "genshin"
+            "genshin",
         ),  # 新增原神自动签到字段
         (
             "ALTER TABLE genshin ADD resin_recovery_time timestamp with time zone;",
-            "genshin"
+            "genshin",
         ),  # 新增原神自动签到字段
-        (
-            "ALTER TABLE genshin ADD bind_group Integer;",
-            "genshin"
-        ),  # 新增原神群号绑定字段
+        ("ALTER TABLE genshin ADD bind_group Integer;", "genshin"),  # 新增原神群号绑定字段
         (
             "ALTER TABLE genshin ADD login_ticket VARCHAR(255) DEFAULT '';",
-            "genshin"
+            "genshin",
         ),  # 新增米游社login_ticket绑定字段
         (
             "ALTER TABLE genshin ADD stuid VARCHAR(255) DEFAULT '';",
-            "genshin"
+            "genshin",
         ),  # 新增米游社stuid绑定字段
         (
             "ALTER TABLE genshin ADD stoken VARCHAR(255) DEFAULT '';",
-            "genshin"
+            "genshin",
         ),  # 新增米游社stoken绑定字段
-        (
-            "ALTER TABLE chat_history ADD plain_text Text;",
-            "chat_history"
-        ),  # 新增纯文本
+        ("ALTER TABLE chat_history ADD plain_text Text;", "chat_history"),  # 新增纯文本
         (
             "ALTER TABLE goods_info ADD daily_limit Integer DEFAULT 0;",
-            "goods_info"
+            "goods_info",
         ),  # 新增纯文本
         (
             "ALTER TABLE goods_info ADD daily_purchase_limit Json DEFAULT '{}';",
-            "goods_info"
+            "goods_info",
         ),  # 新增纯文本
     ]
-    for sql in sql_str + GDict.get('run_sql', []):
+    for sql in sql_str + GDict.get("run_sql", []):
         try:
             if isinstance(sql, str):
-                flag = f'{random.randint(1, 10000)}'
+                flag = f"{random.randint(1, 10000)}"
             else:
                 flag = sql[1]
                 sql = sql[0]
@@ -152,7 +146,7 @@ async def _():
         except PostgresSyntaxError:
             logger.error(f"语法错误：执行sql失败：{sql}")
     # bag_user 将文本转为字典格式
-    await __database_script(_flag)
+    # await __database_script(_flag)
 
 
 @driver.on_bot_connect
@@ -161,7 +155,7 @@ async def _(bot: Bot):
     版本某些需要的变换
     """
     # 清空不存在的群聊信息，并将已所有已存在的群聊group_flag设置为1（认证所有已存在的群）
-    if not await GroupInfo.get_group_info(114514):
+    if not await GroupInfo.filter(group_id=114514).first():
         # 标识符，该功能只需执行一次
         await GroupInfo.add_group_info(114514, "114514", 114514, 114514, 1)
         group_list = await bot.get_group_list()
@@ -171,41 +165,41 @@ async def _(bot: Bot):
             _gl.remove(114514)
         for group_id in _gl:
             if group_id in group_list:
-                if await GroupInfo.get_group_info(group_id):
-                    await GroupInfo.set_group_flag(group_id, 1)
+                if group := await GroupInfo.filter(group_id=group_id).first():
+                    await group.update_or_create(group_flag=1)
                 else:
                     group_info = await bot.get_group_info(group_id=group_id)
-                    await GroupInfo.add_group_info(
-                        group_info["group_id"],
-                        group_info["group_name"],
-                        group_info["max_member_count"],
-                        group_info["member_count"],
-                        1,
+                    await GroupInfo.create(
+                        group_id=group_info["group_id"],
+                        group_name=group_info["group_name"],
+                        max_member_count=group_info["max_member_count"],
+                        member_count=group_info["member_count"],
+                        group_flag=1,
                     )
-                logger.info(f"已将群聊 {group_id} 添加认证...")
+                logger.info(f"已添加群认证...", group_id=group_id)
             else:
                 await GroupInfo.delete_group_info(group_id)
-                logger.info(f"移除不存在的群聊信息：{group_id}")
+                logger.info(f"移除不存在的群聊信息", group_id=group_id)
 
 
-async def __database_script(_flag: List[str]):
-    # bag_user 将文本转为字典格式
-    if "bag_users" in _flag:
-        for x in await BagUser.get_all_users():
-            props = {}
-            if x.props:
-                for prop in [p for p in x.props.split(",") if p]:
-                    if props.get(prop):
-                        props[prop] += 1
-                    else:
-                        props[prop] = 1
-                logger.info(
-                    f"__database_script USER {x.user_qq} GROUP {x.group_id} 更新数据 {props}"
-                )
-            await x.update(
-                property=props,
-                props="",
-            ).apply()
+# async def __database_script(_flag: List[str]):
+#     # bag_user 将文本转为字典格式
+#     if "bag_users" in _flag:
+#         for x in await BagUser.get_all_users():
+#             props = {}
+#             if x.props:
+#                 for prop in [p for p in x.props.split(",") if p]:
+#                     if props.get(prop):
+#                         props[prop] += 1
+#                     else:
+#                         props[prop] = 1
+#                 logger.info(
+#                     f"__database_script USER {x.user_qq} GROUP {x.group_id} 更新数据 {props}"
+#                 )
+#             await x.update(
+#                 property=props,
+#                 props="",
+#             ).apply()
 
 
 # 自动更新城市列表

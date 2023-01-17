@@ -76,10 +76,8 @@ async def _(
         await super_cmd.finish(__plugin_usage__)
     try:
         if cmd[0][:2] == "添加":
-            if await LevelUser.set_level(qq, group_id, level, 1):
-                result = f"添加管理成功, 权限: {level}"
-            else:
-                result = f"管理已存在, 更新权限: {level}"
+            await LevelUser.set_level(qq, group_id, level, 1)
+            result = f"设置权限成功, 权限: {level}"
         else:
             if await LevelUser.delete_level(qq, event.group_id):
                 result = "删除管理成功!"

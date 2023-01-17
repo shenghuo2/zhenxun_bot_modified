@@ -1,31 +1,33 @@
-from .config import (
-    SIGN_RESOURCE_PATH,
-    SIGN_TODAY_CARD_PATH,
-    SIGN_BORDER_PATH,
-    SIGN_BACKGROUND_PATH,
-    lik2level,
-    lik2relation,
-    level2attitude,
-    weekdays,
-)
-from models.sign_group_user import SignGroupUser
-from models.group_member_info import GroupInfoUser
+import asyncio
+import os
+import random
+from datetime import datetime
+from io import BytesIO
+from pathlib import Path
+from typing import List, Optional
+
+import nonebot
+from nonebot import Driver
 from nonebot.adapters.onebot.v11 import MessageSegment
-from configs.config import Config
-from utils.utils import get_user_avatar
+
+from configs.config import NICKNAME, Config
+from configs.path_config import IMAGE_PATH
+from models.group_member_info import GroupInfoUser
+from models.sign_group_user import SignGroupUser
 from utils.image_utils import BuildImage
 from utils.message_builder import image
-from configs.config import NICKNAME
-from pathlib import Path
-from datetime import datetime
-from typing import Optional, List
-from nonebot import Driver
-from io import BytesIO
-import asyncio
-import random
-import nonebot
-import os
+from utils.utils import get_user_avatar
 
+from .config import (
+    SIGN_BACKGROUND_PATH,
+    SIGN_BORDER_PATH,
+    SIGN_RESOURCE_PATH,
+    SIGN_TODAY_CARD_PATH,
+    level2attitude,
+    lik2level,
+    lik2relation,
+    weekdays,
+)
 
 driver: Driver = nonebot.get_driver()
 
@@ -58,7 +60,12 @@ async def get_card(
         Path(SIGN_TODAY_CARD_PATH) / f"{user_id}_{user.group_id}_{_type}_{date}.png"
     )
     if card_file.exists():
-        return image(f"{user_id}_{user.group_id}_{_type}_{date}.png", "sign/today_card")
+        return image(
+            IMAGE_PATH
+            / "sign"
+            / "today_card"
+            / f"{user_id}_{user.group_id}_{_type}_{date}.png"
+        )
     else:
         if add_impression == -1:
             card_file = (
@@ -67,8 +74,10 @@ async def get_card(
             )
             if card_file.exists():
                 return image(
-                    f"{user_id}_{user.group_id}_view_{date}.png",
-                    "sign/today_card",
+                    IMAGE_PATH
+                    / "sign"
+                    / "today_card"
+                    / f"{user_id}_{user.group_id}_view_{date}.png"
                 )
             is_card_view = True
         ava = BytesIO(await get_user_avatar(user_id))
@@ -285,7 +294,12 @@ def _generate_card(
     bk.paste(today_data, (580, 220), True)
     bk.paste(watermark, (15, 400), True)
     bk.save(SIGN_TODAY_CARD_PATH / f"{user_id}_{user.group_id}_{_type}_{data}.png")
-    return image(f"{user_id}_{user.group_id}_{_type}_{data}.png", "sign/today_card")
+    return image(
+        IMAGE_PATH
+        / "sign"
+        / "today_card"
+        / f"{user_id}_{user.group_id}_{_type}_{data}.png"
+    )
 
 
 def generate_progress_bar_pic():

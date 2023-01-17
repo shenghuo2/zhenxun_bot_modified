@@ -1,20 +1,22 @@
-from nonebot import on_request, on_message
+import asyncio
+import re
+import time
+from datetime import datetime
+
+from nonebot import on_message, on_request
 from nonebot.adapters.onebot.v11 import (
-    Bot,
     ActionFailed,
+    Bot,
     FriendRequestEvent,
     GroupRequestEvent,
     MessageEvent,
 )
-from models.friend_user import FriendUser
-from datetime import datetime
+
 from configs.config import NICKNAME, Config
-from utils.manager import requests_manager
+from models.friend_user import FriendUser
 from models.group_info import GroupInfo
+from utils.manager import requests_manager
 from utils.utils import scheduler
-import asyncio
-import time
-import re
 
 __zx_plugin_name__ = "好友群聊处理请求 [Hidden]"
 __plugin_version__ = 0.1
@@ -52,7 +54,7 @@ async def _(bot: Bot, event: FriendRequestEvent):
     )
     if Config.get_config("invite_manager", "AUTO_ADD_FRIEND"):
         await bot.set_friend_add_request(flag=event.flag, approve=True)
-        await FriendUser.add_friend_info(user["user_id"], user["nickname"])
+        await FriendUser.create(user_id=user["user_id"], user_name=user["nickname"])
     else:
         requests_manager.add_request(
             event.user_id,
@@ -71,8 +73,9 @@ async def _(bot: Bot, event: GroupRequestEvent):
     if event.sub_type == "invite":
         if str(event.user_id) in bot.config.superusers:
             try:
-                if await GroupInfo.get_group_info(event.group_id):
-                    await GroupInfo.set_group_flag(event.group_id, 1)
+                if group := await GroupInfo.filter(group_id=event.group_id).first():
+                    group.group_flag = 1
+                    await group.save(update_fields=["group_flag"])
                 else:
                     group_info = await bot.get_group_info(group_id=event.group_id)
                     await GroupInfo.add_group_info(
