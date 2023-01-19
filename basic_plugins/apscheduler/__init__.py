@@ -84,24 +84,25 @@ async def _():
 async def _():
     bots = nonebot.get_bots()
     _used_group = []
-    for bot in bots:
-        gl = await bot.get_group_list()
-    try:
-        bot = get_bot()
-        gl = await bot.get_group_list()
-        gl = [g["group_id"] for g in gl]
-        for g in gl:
-            group_info = await bot.get_group_info(group_id=g)
-            await GroupInfo.add_group_info(
-                group_info["group_id"],
-                group_info["group_name"],
-                group_info["max_member_count"],
-                group_info["member_count"],
-                1,
-            )
-            logger.info(f"自动更新群组 {g} 信息成功")
-    except Exception as e:
-        logger.error(f"自动更新群组信息错误 e:{e}")
+    for bot in bots.values():
+        try:
+            group_list = await bot.get_group_list()
+            gl = [g["group_id"] for g in group_list if g["group_id"] not in _used_group]
+            for g in gl:
+                _used_group.append(g)
+                group_info = await bot.get_group_info(group_id=g)
+                await GroupInfo.update_or_create(
+                    group_id=group_info["group_id"],
+                    defaults={
+                        "group_name": group_info["group_name"],
+                        "max_member_count": group_info["max_member_count"],
+                        "member_count": group_info["member_count"],
+                        "group_flag": 1,
+                    },
+                )
+                logger.info(f"自动更新群组信息成功", group_id=g)
+        except Exception as e:
+            logger.error(f"Bot: {bot.self_id} 自动更新群组信息", e=e)
 
 
 # 自动更新好友信息

@@ -46,12 +46,14 @@ async def _(parma: RequestParma, user: User = Depends(token_to_user)) -> Result:
                         await group.update_or_create(group_flag=1)
                     else:
                         group_info = await bot.get_group_info(group_id=rid)
-                        await GroupInfo.add_group_info(
-                            rid,
-                            group_info["group_name"],
-                            group_info["max_member_count"],
-                            group_info["member_count"],
-                            1,
+                        await GroupInfo.update_or_create(
+                            group_id=group_info["group_id"],
+                            defaults={
+                                "group_name": group_info["group_name"],
+                                "max_member_count": group_info["max_member_count"],
+                                "member_count": group_info["member_count"],
+                                "group_flag": 1,
+                            },
                         )
             flag = await requests_manager.approve(bot, parma.id, parma.type)
         elif parma.handle == "refuse":

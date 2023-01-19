@@ -11,30 +11,30 @@ class GoodsInfo(Model):
 
     id = fields.IntField(pk=True, generated=True, auto_increment=True)
     """自增id"""
-    goods_name = fields.TextField(null=False, unique=True)
+    goods_name = fields.TextField( unique=True)
     """商品名称"""
-    goods_price = fields.IntField(null=False)
+    goods_price = fields.IntField()
     """价格"""
-    goods_description = fields.TextField(null=False)
+    goods_description = fields.TextField()
     """描述"""
     goods_discount = fields.FloatField(default=1)
     """折扣"""
     goods_limit_time = fields.BigIntField(default=0)
     """限时"""
-    daily_limit = fields.IntField(null=False, default=0)
+    daily_limit = fields.IntField( default=0)
     """每日限购"""
     daily_purchase_limit: Dict[str, Dict[str, int]] = fields.JSONField(
-        null=False, default={}connect 101.34.44.241
+         default={}connect 101.34.44.241
     )
     """用户限购记录"""
-    is_passive = fields.BooleanField(null=False, default=False)
+    is_passive = fields.BooleanField( default=False)
     """是否为被动道具"""
     icon = fields.TextField()
     """图标路径"""
 
     class Meta:
         table = "goods_info"
-        table_description = "商品数据库"
+        table_description = "商品数据表"
 
     @classmethod
     async def add_goods(

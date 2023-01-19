@@ -11,9 +11,9 @@ class BagUser(Model):
 
     id = fields.IntField(pk=True, generated=True, auto_increment=True)
     """自增id"""
-    user_qq = fields.BigIntField(null=False)
+    user_qq = fields.BigIntField()
     """用户id"""
-    group_id = fields.BigIntField(null=False)
+    group_id = fields.BigIntField()
     """群聊id"""
     gold = fields.IntField(default=100)
     """金币数量"""
@@ -25,12 +25,12 @@ class BagUser(Model):
     """今日获取金币"""
     spend_today_gold = fields.IntField(default=0)
     """今日获取金币"""
-    property: Dict[str, int] = fields.JSONField(null=False, default={})
+    property: Dict[str, int] = fields.JSONField(default={})
     """道具"""
 
     class Meta:
         table = "bag_user"
-        table_description = "用户道具数据库"
+        table_description = "用户道具数据表"
         unique_together = ("user_qq", "group_id")
 
     @classmethod

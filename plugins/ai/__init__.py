@@ -1,18 +1,15 @@
 
 from nonebot import on_message
-from nonebot.adapters.onebot.v11 import (
-    Bot,
-    GroupMessageEvent,
-    Message,
-    MessageEvent,
-)
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent
 from nonebot.rule import to_me
+
+from configs.config import NICKNAME, Config
 from models.friend_user import FriendUser
 from models.group_member_info import GroupInfoUser
 from services.log import logger
 from utils.utils import get_message_img, get_message_text
+
 from .data_source import get_chat_result, hello, no_result
-from configs.config import NICKNAME, Config
 
 __zx_plugin_name__ = "AI"
 __plugin_usage__ = f"""
@@ -61,7 +58,7 @@ async def _(bot: Bot, event: MessageEvent):
         await ai.finish(hello())
     img = img[0] if img else ""
     if isinstance(event, GroupMessageEvent):
-        nickname = await GroupInfoUser.get_group_member_nickname(
+        nickname = await GroupInfoUser.get_user_nickname(
             event.user_id, event.group_id
         )
     else:

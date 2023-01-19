@@ -73,18 +73,16 @@ async def _(bot: Bot, event: GroupRequestEvent):
     if event.sub_type == "invite":
         if str(event.user_id) in bot.config.superusers:
             try:
-                if group := await GroupInfo.filter(group_id=event.group_id).first():
-                    group.group_flag = 1
-                    await group.save(update_fields=["group_flag"])
-                else:
-                    group_info = await bot.get_group_info(group_id=event.group_id)
-                    await GroupInfo.add_group_info(
-                        group_info["group_id"],
-                        group_info["group_name"],
-                        group_info["max_member_count"],
-                        group_info["member_count"],
-                        1,
-                    )
+                group_info = await bot.get_group_info(group_id=event.group_id)
+                await GroupInfo.update_or_create(
+                    group_id=group_info["group_id"],
+                    defaults={
+                        "group_name": group_info["group_name"],
+                        "max_member_count": group_info["max_member_count"],
+                        "member_count": group_info["member_count"],
+                        "group_flag": 1,
+                    },
+                )
                 await bot.set_group_add_request(
                     flag=event.flag, sub_type="invite", approve=True
                 )

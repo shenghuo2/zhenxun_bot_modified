@@ -116,15 +116,12 @@ async def _(bot: Bot, event: GroupIncreaseNoticeEvent):
         user_info = await bot.get_group_member_info(
             group_id=event.group_id, user_id=event.user_id
         )
-        if await GroupInfoUser.add_member_info(
-            user_info["user_id"],
-            user_info["group_id"],
-            user_info["nickname"],
-            join_time,
-        ):
-            logger.info(f"用户{user_info['user_id']} 所属{user_info['group_id']} 更新成功")
-        else:
-            logger.info(f"用户{user_info['user_id']} 所属{user_info['group_id']} 更新失败")
+        await GroupInfoUser.update_or_create(
+            user_qq=user_info["user_id"],
+            group_id=user_info["group_id"],
+            defaults={"user_name": user_info["nickname"], "user_join_time": join_time},
+        )
+        logger.info(f"用户{user_info['user_id']} 所属{user_info['group_id']} 更新成功")
 
         # 群欢迎消息
         if _flmt.check(event.group_id):
@@ -167,11 +164,11 @@ async def _(bot: Bot, event: GroupDecreaseNoticeEvent):
     if event.sub_type == "kick_me":
         group_id = event.group_id
         operator_id = event.operator_id
-        try:
-            operator_name = (
-                await GroupInfoUser.get_member_info(event.operator_id, event.group_id)
-            ).user_name
-        except AttributeError:
+        if user := await GroupInfoUser.get_or_none(
+            user_qq=event.operator_id, group_id=event.group_id
+        ):
+            operator_name = user.user_name
+        else:
             operator_name = "None"
         group = await GroupInfo.filter(group_id=group_id).first()
         group_name = group.group_name if group else ""
@@ -187,21 +184,19 @@ async def _(bot: Bot, event: GroupDecreaseNoticeEvent):
     if event.user_id == int(bot.self_id):
         group_manager.delete_group(event.group_id)
         return
-    try:
-        user_name = (
-            await GroupInfoUser.get_member_info(event.user_id, event.group_id)
-        ).user_name
-    except AttributeError:
-        user_name = str(event.user_id)
-    if await GroupInfoUser.delete_member_info(event.user_id, event.group_id):
-        logger.info(
-            f"名称: {user_name} 退出群聊",
-            "group_decrease_handle",
-            event.user_id,
-            event.group_id,
-        )
+    if user := await GroupInfoUser.get_or_none(
+        user_qq=event.user_id, group_id=event.group_id
+    ):
+        user_name = user.user_name
     else:
-        logger.info(f"用户{user_name}, qq={event.user_id} 所属{event.group_id} 删除失败")
+        user_name = f"{event.user_id}"
+    await GroupInfoUser.filter(user_qq=event.user_id, group_id=event.group_id).delete()
+    logger.info(
+        f"名称: {user_name} 退出群聊",
+        "group_decrease_handle",
+        event.user_id,
+        event.group_id,
+    )
     rst = ""
     if event.sub_type == "leave":
         rst = f"{user_name}离开了我们..."

@@ -11,7 +11,7 @@ class ChatHistory(Model):
 
     id = fields.IntField(pk=True, generated=True, auto_increment=True)
     """自增id"""
-    user_qq = fields.BigIntField(null=False)
+    user_qq = fields.BigIntField()
     """用户id"""
     group_id = fields.BigIntField()
     """群聊id"""
@@ -24,7 +24,7 @@ class ChatHistory(Model):
 
     class Meta:
         table = "chat_history"
-        table_description = "聊天记录数据库"
+        table_description = "聊天记录数据表"
 
     @classmethod
     async def get_group_msg_rank(

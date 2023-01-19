@@ -1,39 +1,40 @@
+import time
 from typing import Optional
 
 import nonebot
 from nonebot.adapters.onebot.v11 import (
-    GroupMessageEvent,
-    PrivateMessageEvent,
     Bot,
     Event,
-    MessageEvent,
+    GroupMessageEvent,
     Message,
+    MessageEvent,
     PokeNotifyEvent,
+    PrivateMessageEvent,
 )
 from nonebot.exception import ActionFailed, IgnoredException
 from nonebot.internal.matcher import Matcher
-from services.log import logger
+
+from configs.config import Config
 from models.bag_user import BagUser
 from models.ban_user import BanUser
 from models.friend_user import FriendUser
 from models.group_member_info import GroupInfoUser
 from models.level_user import LevelUser
 from models.user_shop_gold_log import UserShopGoldLog
+from services.log import logger
 from utils.decorator import Singleton
 from utils.manager import (
-    plugins2block_manager,
     StaticData,
-    plugins2settings_manager,
-    group_manager,
     admin_manager,
-    plugins_manager,
+    group_manager,
+    plugins2block_manager,
     plugins2cd_manager,
     plugins2count_manager,
+    plugins2settings_manager,
+    plugins_manager,
 )
 from utils.message_builder import at
 from utils.utils import FreqLimiter
-from configs.config import Config
-import time
 
 ignore_rst_module = ["ai", "poke", "dialogue"]
 
@@ -97,7 +98,7 @@ async def send_msg(msg: str, bot: Bot, event: MessageEvent):
         msg = msg.replace("[uname]", uname)
     if "[nickname]" in msg:
         if isinstance(event, GroupMessageEvent):
-            nickname = await GroupInfoUser.get_group_member_nickname(
+            nickname = await GroupInfoUser.get_user_nickname(
                 event.user_id, event.group_id
             )
         else:

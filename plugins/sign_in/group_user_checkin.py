@@ -1,23 +1,26 @@
-from datetime import datetime, timedelta
-from models.sign_group_user import SignGroupUser
-from models.group_member_info import GroupInfoUser
-from models.bag_user import BagUser
-from configs.config import NICKNAME
-from nonebot.adapters.onebot.v11 import MessageSegment
-from utils.image_utils import BuildImage, BuildMat
-from services.db_context import db
-from .utils import get_card, SIGN_TODAY_CARD_PATH
-from typing import Optional
-from services.log import logger
-from .random_event import random_event
-from utils.data_utils import init_rank
-from utils.utils import get_user_avatar
-from io import BytesIO
-import random
-import math
 import asyncio
-import secrets
+import math
 import os
+import random
+import secrets
+from datetime import datetime, timedelta
+from io import BytesIO
+from typing import Optional
+
+from nonebot.adapters.onebot.v11 import MessageSegment
+
+from configs.config import NICKNAME
+from models.bag_user import BagUser
+from models.group_member_info import GroupInfoUser
+from models.sign_group_user import SignGroupUser
+from services.db_context import db
+from services.log import logger
+from utils.data_utils import init_rank
+from utils.image_utils import BuildImage, BuildMat
+from utils.utils import get_user_avatar
+
+from .random_event import random_event
+from .utils import SIGN_TODAY_CARD_PATH, get_card
 
 
 async def group_user_check_in(
@@ -27,7 +30,7 @@ async def group_user_check_in(
     present = datetime.now()
     async with db.transaction():
         # 取得相应用户
-        user = await SignGroupUser.ensure(user_qq, group, for_update=True)
+        user = await SignGroupUser.ensure(user_qq, group)
         # 如果同一天签到过，特殊处理
         if (
             user.checkin_time_last + timedelta(hours=8)
@@ -49,21 +52,21 @@ async def check_in_all(nickname: str, user_qq: int):
     """
     async with db.transaction():
         present = datetime.now()
-        for u in await SignGroupUser.get_user_all_data(user_qq):
+        for u in await SignGroupUser.filter(user_qq=user_qq).all():
             group = u.group_id
-            if not ((
-                u.checkin_time_last + timedelta(hours=8)
-            ).date() >= present.date() or f"{u}_{group}_sign_{datetime.now().date()}" in os.listdir(
-                SIGN_TODAY_CARD_PATH
-            )):
+            if not (
+                (u.checkin_time_last + timedelta(hours=8)).date() >= present.date()
+                or f"{u}_{group}_sign_{datetime.now().date()}"
+                in os.listdir(SIGN_TODAY_CARD_PATH)
+            ):
                 await _handle_check_in(nickname, user_qq, group, present)
 
 
 async def _handle_check_in(
     nickname: str, user_qq: int, group: int, present: datetime
 ) -> MessageSegment:
-    user = await SignGroupUser.ensure(user_qq, group, for_update=True)
-    impression_added = (secrets.randbelow(99)+1)/100
+    user = await SignGroupUser.ensure(user_qq, group)
+    impression_added = (secrets.randbelow(99) + 1) / 100
     critx2 = random.random()
     add_probability = user.add_probability
     specify_probability = user.specify_probability
@@ -71,7 +74,7 @@ async def _handle_check_in(
         impression_added *= 2
     elif critx2 < specify_probability:
         impression_added *= 2
-    await SignGroupUser.sign(user, impression_added, present)
+    await SignGroupUser.sign(user, impression_added)
     gold = random.randint(1, 100)
     gift, gift_type = random_event(user.impression)
     if gift_type == "gold":
@@ -80,7 +83,7 @@ async def _handle_check_in(
     else:
         await BagUser.add_gold(user_qq, group, gold)
         await BagUser.add_property(user_qq, group, gift)
-        gift += ' + 1'
+        gift += " + 1"
 
     logger.info(
         f"(USER {user.user_qq}, GROUP {user.group_id})"
@@ -171,18 +174,14 @@ async def _pst(users: list, impressions: list, groups: list):
             impressions.pop(index)
             users.pop(index)
             groups.pop(index)
-            try:
-                user_name = (
-                    await GroupInfoUser.get_member_info(user, group)
-                ).user_name
-            except AttributeError:
+            if user_ := await GroupInfoUser.get_or_none(user_qq=user, group_id=group):
+                user_name = user_.user_name
+            else:
                 user_name = f"我名字呢？"
             user_name = user_name if len(user_name) < 11 else user_name[:10] + "..."
             ava = await get_user_avatar(user)
             if ava:
-                ava = BuildImage(
-                    50, 50, background=BytesIO(ava)
-                )
+                ava = BuildImage(50, 50, background=BytesIO(ava))
             else:
                 ava = BuildImage(50, 50, color="white")
             ava.circle()

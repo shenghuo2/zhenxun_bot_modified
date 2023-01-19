@@ -36,10 +36,14 @@ driver: Driver = nonebot.get_driver()
 async def init_image():
     SIGN_RESOURCE_PATH.mkdir(parents=True, exist_ok=True)
     SIGN_TODAY_CARD_PATH.mkdir(exist_ok=True, parents=True)
-    await GroupInfoUser.add_member_info(114514, 114514, "", datetime.min, 0)
-    _u = await GroupInfoUser.get_member_info(114514, 114514)
-    if _u.uid is None:
-        await _u.update(uid=0).apply()
+    if not await GroupInfoUser.filter(user_qq=114514).first():
+        await GroupInfoUser.create(
+            user_qq=114514,
+            group_id=114514,
+            user_name="",
+            user_join_time=datetime.min,
+            uid=0,
+        )
     generate_progress_bar_pic()
     clear_sign_data_pic()
 

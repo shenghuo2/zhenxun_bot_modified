@@ -8,16 +8,16 @@ class FriendUser(Model):
 
     id = fields.IntField(pk=True, generated=True, auto_increment=True)
     """自增id"""
-    user_id = fields.BigIntField(null=False, unique=True)
+    user_id = fields.BigIntField(unique=True)
     """用户id"""
-    user_name = fields.CharField(null=False, max_length=255, default="")
+    user_name = fields.CharField(max_length=255, default="")
     """用户名称"""
-    nickname = fields.CharField(null=False, max_length=255)
+    nickname = fields.CharField(max_length=255)
     """私聊下自定义昵称"""
 
     class Meta:
         table = "friend_users"
-        table_description = "好友数据库"
+        table_description = "好友信息数据表"
 
     @classmethod
     async def get_user_name(cls, user_id: int) -> str:

@@ -1,11 +1,12 @@
 from nonebot import on_command
+from nonebot.adapters.onebot.v11 import Bot
 from nonebot.permission import SUPERUSER
 from nonebot.rule import to_me
-from utils.utils import get_bot
-from services.log import logger
-from models.group_info import GroupInfo
-from models.friend_user import FriendUser
 
+from models.friend_user import FriendUser
+from models.group_info import GroupInfo
+from services.log import logger
+from utils.utils import get_bot
 
 __zx_plugin_name__ = "更新群/好友信息 [Superuser]"
 __plugin_usage__ = """
@@ -32,27 +33,21 @@ update_friend_info = on_command(
 
 
 @update_group_info.handle()
-async def _():
-    bot = get_bot()
+async def _(bot: Bot):
     gl = await bot.get_group_list()
     gl = [g["group_id"] for g in gl]
-    num = 0
-    rst = ""
     for g in gl:
         group_info = await bot.get_group_info(group_id=g)
-        if await GroupInfo.add_group_info(
-            group_info["group_id"],
-            group_info["group_name"],
-            group_info["max_member_count"],
-            group_info["member_count"],
-            1
-        ):
-            num += 1
-            logger.info(f"自动更新群组 {g} 信息成功")
-        else:
-            logger.info(f"自动更新群组 {g} 信息失败")
-            rst += f"{g} 更新失败\n"
-    await update_group_info.send(f"成功更新了 {num} 个群的信息\n{rst[:-1]}")
+        await GroupInfo.update_or_create(
+            group_id=group_info["group_id"],
+            defaults={
+                "group_name": group_info["group_name"],
+                "max_member_count": group_info["max_member_count"],
+                "member_count": group_info["member_count"],
+                "group_flag": 1,
+            },
+        )
+    await update_group_info.send(f"成功更新了 {len(gl)} 个群的信息")
 
 
 @update_friend_info.handle()
@@ -66,5 +61,5 @@ async def _():
         num += 1
         # else:
         #     logger.warning(f'自动更新好友 {f["user_id"]} 信息失败')
-            rst += f'{f["user_id"]} 更新失败\n'
+        rst += f'{f["user_id"]} 更新失败\n'
     await update_friend_info.send(f"成功更新了 {num} 个好友的信息\n{rst[:-1]}")

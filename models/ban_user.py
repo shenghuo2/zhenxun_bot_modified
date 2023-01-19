@@ -10,7 +10,7 @@ class BanUser(Model):
 
     user_qq = fields.IntField(pk=True)
     """用户id"""
-    ban_level = fields.IntField(null=False)
+    ban_level = fields.IntField()
     """使用ban命令的用户等级"""
     ban_time = fields.BigIntField()
     """ban开始的时间"""
@@ -19,7 +19,7 @@ class BanUser(Model):
 
     class Meta:
         table = "ban_users"
-        table_description = ".ban/b了 封禁人员数据库"
+        table_description = ".ban/b了 封禁人员数据表"
 
     @classmethod
     async def check_ban_level(cls, user_qq: int, level: int) -> bool:

@@ -68,7 +68,7 @@ async def _(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):
             _tmp += "*" if x in black_word else x
     msg = _tmp
     if isinstance(event, GroupMessageEvent):
-        if await GroupInfoUser.set_group_member_nickname(
+        if await GroupInfoUser.set_user_nickname(
             event.user_id, event.group_id, msg
         ):
             if len(msg) < 5:
@@ -111,7 +111,7 @@ async def _(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):
 @my_nickname.handle()
 async def _(event: GroupMessageEvent):
     try:
-        nickname_ = await GroupInfoUser.get_group_member_nickname(
+        nickname_ = await GroupInfoUser.get_user_nickname(
             event.user_id, event.group_id
         )
     except AttributeError:
@@ -165,7 +165,7 @@ async def _(bot: Bot, event: PrivateMessageEvent, state: T_State):
 
 @cancel_nickname.handle()
 async def _(event: GroupMessageEvent):
-    nickname_ = await GroupInfoUser.get_group_member_nickname(
+    nickname_ = await GroupInfoUser.get_user_nickname(
         event.user_id, event.group_id
     )
     if nickname_:
@@ -180,7 +180,7 @@ async def _(event: GroupMessageEvent):
                 ]
             )
         )
-        await GroupInfoUser.set_group_member_nickname(event.user_id, event.group_id, "")
+        await GroupInfoUser.set_user_nickname(event.user_id, event.group_id, "")
         await BanUser.ban(event.user_id, 9, 60)
     else:
         await cancel_nickname.send("你在做梦吗？你没有昵称啊", at_sender=True)
