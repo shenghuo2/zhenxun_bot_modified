@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 from tortoise import fields
 
@@ -24,28 +24,12 @@ class SignGroupUser(Model):
     """双倍签到增加概率"""
     specify_probability = fields.DecimalField(10, 3, default=0)
     """使用指定双倍概率"""
+    # specify_probability = fields.DecimalField(10, 3, default=0)
 
     class Meta:
         table = "sign_group_users"
         table_description = "群员签到数据表"
         unique_together = ("user_qq", "group_id")
-
-    @classmethod
-    async def ensure(
-        cls, user_qq: int, group_id: int, for_update: bool = False
-    ) -> "SignGroupUser":
-        """
-        说明:
-            获取签到用户
-        参数:
-            :param user_qq: 用户qq
-            :param group_id: 所在群聊
-            :param for_update: 是否存在修改数据
-        """
-        user, is_create = await cls.get_or_create(user_qq=user_qq, group_id=group_id)
-        # if is_create:
-        #     user.checkin_count = 0
-        return user
 
     @classmethod
     async def sign(cls, user: "SignGroupUser", impression: float):
@@ -72,7 +56,7 @@ class SignGroupUser(Model):
     @classmethod
     async def get_all_impression(
         cls, group_id: Optional[int]
-    ) -> Dict[Literal["user_qq", "group_id", "impression"], Union[int, float]]:
+    ) -> Tuple[List[int], List[int], List[float]]:
         """
         说明:
             获取该群所有用户 id 及对应 好感度
@@ -83,4 +67,12 @@ class SignGroupUser(Model):
             query = cls.filter(group_id=group_id)
         else:
             query = cls
-        return await query.all().values("user_qq", "group_id", "impression")  # type: ignore
+        value_list = await query.all().values_list("user_qq", "group_id", "impression")  # type: ignore
+        qq_list = []
+        group_list = []
+        impression_list = []
+        for value in value_list:
+            qq_list.append(value[0])
+            group_list.append(value[1])
+            impression_list.append(float(value[2]))
+        return qq_list, impression_list, group_list

@@ -60,13 +60,15 @@ async def _(event: GroupMessageEvent):
             data = None
         if data:
             # 转发视频
-            if data.get("desc") == "哔哩哔哩":
+            if data.get("desc") == "哔哩哔哩" or "哔哩哔哩" in data.get("prompt"):
                 async with aiohttp.ClientSession(headers=get_user_agent()) as session:
                     async with session.get(
                         data["meta"]["detail_1"]["qqdocurl"],
                         timeout=7,
                     ) as response:
                         url = str(response.url).split("?")[0]
+                        if url[-1] == "/":
+                            url = url[:-1]
                         bvid = url.split("/")[-1]
                         vd_info = await video.get_video_base_info(bvid)
             # 转发专栏

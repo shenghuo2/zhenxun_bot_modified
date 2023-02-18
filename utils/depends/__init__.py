@@ -25,7 +25,7 @@ from utils.utils import (
 
 def OneCommand():
     """
-    获取收个命令Command
+    获取单个命令Command
     """
 
     async def dependency(
@@ -74,8 +74,13 @@ def CostGold(gold: int):
         if (await BagUser.get_gold(event.user_id, event.group_id)) < gold:
             await matcher.finish(at(event.user_id) + f"金币不足..该功能需要{gold}金币..")
         await BagUser.spend_gold(event.user_id, event.group_id, gold)
-        await UserShopGoldLog.add_shop_log(
-            event.user_id, event.group_id, 2, matcher.plugin_name, gold, 1
+        await UserShopGoldLog.create(
+            user_qq=event.user_id,
+            group_id=event.group_id,
+            type=2,
+            name=matcher.plugin_name,
+            num=1,
+            spend_gold=gold,
         )
 
     return Depends(dependency)
@@ -101,8 +106,9 @@ def GetConfig(
         module_ = module or matcher.plugin_name
         if module_:
             value = Config.get_config(module_, config, default_value)
-            if value is None:
-                await matcher.finish(prompt or f"配置项 {config} 未填写！")
+            if value is None and prompt:
+                # await matcher.finish(prompt or f"配置项 {config} 未填写！")
+                await matcher.finish(prompt)
             return value
 
     return Depends(dependency)

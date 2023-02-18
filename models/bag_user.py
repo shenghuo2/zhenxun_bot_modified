@@ -29,7 +29,7 @@ class BagUser(Model):
     """道具"""
 
     class Meta:
-        table = "bag_user"
+        table = "bag_users"
         table_description = "用户道具数据表"
         unique_together = ("user_qq", "group_id")
 

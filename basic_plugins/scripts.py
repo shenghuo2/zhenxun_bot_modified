@@ -1,20 +1,13 @@
 import random
 from asyncio.exceptions import TimeoutError
-from typing import List
 
 import nonebot
-from asyncpg.exceptions import (
-    DuplicateColumnError,
-    PostgresSyntaxError,
-    UndefinedColumnError,
-)
-from nonebot import Driver
 from nonebot.adapters.onebot.v11 import Bot
+from nonebot.drivers import Driver
 
 from configs.path_config import TEXT_PATH
 from models.bag_user import BagUser
 from models.group_info import GroupInfo
-from services.db_context import db
 from services.log import logger
 from utils.http_utils import AsyncHttpx
 from utils.utils import GDict, scheduler
@@ -38,6 +31,7 @@ async def update_city():
     data = {}
     if not china_city.exists():
         try:
+            logger.debug("开始更新城市列表...")
             res = await AsyncHttpx.get(
                 "http://www.weather.com.cn/data/city3jdata/china.html", timeout=5
             )
@@ -56,97 +50,97 @@ async def update_city():
             with open(china_city, "w", encoding="utf8") as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
             logger.info("自动更新城市列表完成.....")
-        except TimeoutError:
-            logger.warning("自动更新城市列表超时.....")
-        except ValueError:
-            logger.warning("自动城市列表失败.....")
+        except TimeoutError as e:
+            logger.warning("自动更新城市列表超时...", e=e)
+        except ValueError as e:
+            logger.warning("自动城市列表失败.....", e=e)
         except Exception as e:
-            logger.error(f"自动城市列表未知错误 {type(e)}：{e}")
+            logger.error(f"自动城市列表未知错误", e=e)
 
 
-@driver.on_startup
-async def _():
-    """
-    数据库表结构变换
-    """
-    _flag = []
-    sql_str = [
-        (
-            "ALTER TABLE group_info ADD group_flag Integer NOT NULL DEFAULT 0;",
-            "group_info",
-        ),  # group_info表添加一个group_flag
-        (
-            "ALTER TABLE bag_users rename belonging_group To group_id;",
-            "bag_users",
-        ),  # 将 bag_users 的 belonging_group 改为 group_id
-        (
-            "ALTER TABLE group_info_users rename belonging_group To group_id;",
-            "group_info_users",
-        ),
-        (
-            "ALTER TABLE sign_group_users rename belonging_group To group_id;",
-            "sign_group_users",
-        ),
-        (
-            "ALTER TABLE open_cases_users rename belonging_group To group_id;",
-            "open_cases_users",
-        ),
-        (
-            "ALTER TABLE bag_users ADD property json NOT NULL DEFAULT '{}';",
-            "bag_users",
-        ),  # bag_users 新增字段 property 替代 props
-        (
-            "ALTER TABLE genshin ADD auto_sign_time timestamp with time zone;",
-            "genshin",
-        ),  # 新增原神自动签到字段
-        (
-            "ALTER TABLE genshin ADD resin_remind boolean DEFAULT False;",
-            "genshin",
-        ),  # 新增原神自动签到字段
-        (
-            "ALTER TABLE genshin ADD resin_recovery_time timestamp with time zone;",
-            "genshin",
-        ),  # 新增原神自动签到字段
-        ("ALTER TABLE genshin ADD bind_group Integer;", "genshin"),  # 新增原神群号绑定字段
-        (
-            "ALTER TABLE genshin ADD login_ticket VARCHAR(255) DEFAULT '';",
-            "genshin",
-        ),  # 新增米游社login_ticket绑定字段
-        (
-            "ALTER TABLE genshin ADD stuid VARCHAR(255) DEFAULT '';",
-            "genshin",
-        ),  # 新增米游社stuid绑定字段
-        (
-            "ALTER TABLE genshin ADD stoken VARCHAR(255) DEFAULT '';",
-            "genshin",
-        ),  # 新增米游社stoken绑定字段
-        ("ALTER TABLE chat_history ADD plain_text Text;", "chat_history"),  # 新增纯文本
-        (
-            "ALTER TABLE goods_info ADD daily_limit Integer DEFAULT 0;",
-            "goods_info",
-        ),  # 新增纯文本
-        (
-            "ALTER TABLE goods_info ADD daily_purchase_limit Json DEFAULT '{}';",
-            "goods_info",
-        ),  # 新增纯文本
-    ]
-    for sql in sql_str + GDict.get("run_sql", []):
-        try:
-            if isinstance(sql, str):
-                flag = f"{random.randint(1, 10000)}"
-            else:
-                flag = sql[1]
-                sql = sql[0]
-            query = db.text(sql)
-            await db.first(query)
-            logger.info(f"完成sql操作：{sql}")
-            _flag.append(flag)
-        except (DuplicateColumnError, UndefinedColumnError):
-            pass
-        except PostgresSyntaxError:
-            logger.error(f"语法错误：执行sql失败：{sql}")
-    # bag_user 将文本转为字典格式
-    # await __database_script(_flag)
+# @driver.on_startup
+# async def _():
+#     """
+#     数据库表结构变换
+#     """
+#     _flag = []
+#     sql_str = [
+#         (
+#             "ALTER TABLE group_info ADD group_flag Integer NOT NULL DEFAULT 0;",
+#             "group_info",
+#         ),  # group_info表添加一个group_flag
+#         (
+#             "ALTER TABLE bag_users rename belonging_group To group_id;",
+#             "bag_users",
+#         ),  # 将 bag_users 的 belonging_group 改为 group_id
+#         (
+#             "ALTER TABLE group_info_users rename belonging_group To group_id;",
+#             "group_info_users",
+#         ),
+#         (
+#             "ALTER TABLE sign_group_users rename belonging_group To group_id;",
+#             "sign_group_users",
+#         ),
+#         (
+#             "ALTER TABLE open_cases_users rename belonging_group To group_id;",
+#             "open_cases_users",
+#         ),
+#         (
+#             "ALTER TABLE bag_users ADD property json NOT NULL DEFAULT '{}';",
+#             "bag_users",
+#         ),  # bag_users 新增字段 property 替代 props
+#         (
+#             "ALTER TABLE genshin ADD auto_sign_time timestamp with time zone;",
+#             "genshin",
+#         ),  # 新增原神自动签到字段
+#         (
+#             "ALTER TABLE genshin ADD resin_remind boolean DEFAULT False;",
+#             "genshin",
+#         ),  # 新增原神自动签到字段
+#         (
+#             "ALTER TABLE genshin ADD resin_recovery_time timestamp with time zone;",
+#             "genshin",
+#         ),  # 新增原神自动签到字段
+#         ("ALTER TABLE genshin ADD bind_group Integer;", "genshin"),  # 新增原神群号绑定字段
+#         (
+#             "ALTER TABLE genshin ADD login_ticket VARCHAR(255) DEFAULT '';",
+#             "genshin",
+#         ),  # 新增米游社login_ticket绑定字段
+#         (
+#             "ALTER TABLE genshin ADD stuid VARCHAR(255) DEFAULT '';",
+#             "genshin",
+#         ),  # 新增米游社stuid绑定字段
+#         (
+#             "ALTER TABLE genshin ADD stoken VARCHAR(255) DEFAULT '';",
+#             "genshin",
+#         ),  # 新增米游社stoken绑定字段
+#         ("ALTER TABLE chat_history ADD plain_text Text;", "chat_history"),  # 新增纯文本
+#         (
+#             "ALTER TABLE goods_info ADD daily_limit Integer DEFAULT 0;",
+#             "goods_info",
+#         ),  # 新增纯文本
+#         (
+#             "ALTER TABLE goods_info ADD daily_purchase_limit Json DEFAULT '{}';",
+#             "goods_info",
+#         ),  # 新增纯文本
+#     ]
+#     for sql in sql_str + GDict.get("run_sql", []):
+#         try:
+#             if isinstance(sql, str):
+#                 flag = f"{random.randint(1, 10000)}"
+#             else:
+#                 flag = sql[1]
+#                 sql = sql[0]
+#             query = db.text(sql)
+#             await db.first(query)
+#             logger.info(f"完成sql操作：{sql}")
+#             _flag.append(flag)
+#         except (DuplicateColumnError, UndefinedColumnError):
+#             pass
+#         except PostgresSyntaxError:
+#             logger.error(f"语法错误：执行sql失败：{sql}")
+# bag_user 将文本转为字典格式
+# await __database_script(_flag)
 
 
 @driver.on_bot_connect
@@ -155,9 +149,15 @@ async def _(bot: Bot):
     版本某些需要的变换
     """
     # 清空不存在的群聊信息，并将已所有已存在的群聊group_flag设置为1（认证所有已存在的群）
-    if not await GroupInfo.filter(group_id=114514).first():
+    if not await GroupInfo.get_or_none(group_id=114514):
         # 标识符，该功能只需执行一次
-        await GroupInfo.create(group_id=114514, group_name="114514", max_member_count=114514, member_count=114514, group_flag1)
+        await GroupInfo.create(
+            group_id=114514,
+            group_name="114514",
+            max_member_count=114514,
+            member_count=114514,
+            group_flag=1,
+        )
         group_list = await bot.get_group_list()
         group_list = [g["group_id"] for g in group_list]
         _gl = [x.group_id for x in await GroupInfo.all()]
@@ -165,7 +165,7 @@ async def _(bot: Bot):
             _gl.remove(114514)
         for group_id in _gl:
             if group_id in group_list:
-                if group := await GroupInfo.filter(group_id=group_id).first():
+                if group := await GroupInfo.get_or_none(group_id=group_id):
                     await group.update_or_create(group_flag=1)
                 else:
                     group_info = await bot.get_group_info(group_id=group_id)

@@ -12,7 +12,7 @@ class GroupInfo(Model):
     """群聊id"""
     group_name = fields.TextField(default="")
     """群聊名称"""
-    max_member_count = fields.IntField(default="")
+    max_member_count = fields.IntField(default=0)
     """最大人数"""
     member_count = fields.IntField(default=0)
     """当前人数"""

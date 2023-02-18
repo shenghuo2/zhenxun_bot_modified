@@ -1,9 +1,9 @@
 from typing import List
 
-from gino import Gino
-from tortoise import Tortoise, run_async
+from tortoise import Tortoise, fields
 from tortoise.connection import connections
 from tortoise.models import Model as Model_
+from tortoise.queryset import RawSQLQuery
 
 from configs.config import address, bind, database, password, port, sql_name, user
 from utils.text_utils import prompt2cn
@@ -12,9 +12,12 @@ from .log import logger
 
 MODELS: List[str] = []
 
+SCRIPT_METHOD = []
+
 
 class Model(Model_):
-    """自动添加模块
+    """
+    自动添加模块
 
     Args:
         Model_ (_type_): _description_
@@ -23,16 +26,18 @@ class Model(Model_):
     def __init_subclass__(cls, **kwargs):
         MODELS.append(cls.__module__)
 
+        if func := getattr(cls, "_run_script", None):
+            SCRIPT_METHOD.append(func)
 
-def add_model(model: str):
-    """
-    添加加载模型
 
-    Args:
-        model (str): 模型路径
-    """
-    if model not in MODELS:
-        MODELS.append(model)
+class TestSQL(Model):
+
+    id = fields.IntField(pk=True, generated=True, auto_increment=True)
+    """自增id"""
+
+    class Meta:
+        table = "test_sql"
+        table_description = "执行SQL命令，不记录任何数据"
 
 
 async def init():
@@ -47,6 +52,9 @@ async def init():
         logger.info(f"Database loaded successfully!")
     except Exception as e:
         raise Exception(f"数据库连接错误.... {type(e)}: {e}")
+    if SCRIPT_METHOD:
+        for func in SCRIPT_METHOD:
+            await func()
 
 
 async def disconnect():

@@ -261,30 +261,30 @@ async def register_goods(
     :param icon: 图标
     :return: 是否添加成功
     """
-    if not await GoodsInfo.filter(goods_name=name).first():
-        limit_time = float(limit_time) if limit_time else limit_time
+    if not await GoodsInfo.get_or_none(goods_name=name):
+        limit_time_ = float(limit_time) if limit_time else limit_time
         discount = discount if discount is not None else 1
-        limit_time = (
-            int(time.time() + limit_time * 60 * 60)
-            if limit_time is not None and limit_time != 0
+        limit_time_ = (
+            int(time.time() + limit_time_ * 60 * 60)
+            if limit_time_ is not None and limit_time_ != 0
             else 0
         )
-        await GoodsInfo.add_goods(
-            name,
-            int(price),
-            des,
-            float(discount),
-            limit_time,
-            daily_limit,
-            is_passive,
-            icon,
+        await GoodsInfo.create(
+            goods_name=name,
+            goods_price=int(price),
+            goods_description=des,
+            goods_discount=float(discount),
+            goods_limit_time=limit_time_,
+            daily_limit=daily_limit,
+            is_passive=is_passive,
+            icon=icon,
         )
         return True
     return False
 
 
 # 删除商品
-async def delete_goods(name: str, id_: int) -> "str, str, int":
+async def delete_goods(name: str, id_: int) -> Tuple[str, str, int]:
     """
     删除商品
     :param name: 商品名称
@@ -305,6 +305,7 @@ async def delete_goods(name: str, id_: int) -> "str, str, int":
             return f"删除商品 {name} 成功！", name, 200
         else:
             return f"删除商品 {name} 失败！", name, 999
+    return "获取商品失败", "", 999
 
 
 # 更新商品信息

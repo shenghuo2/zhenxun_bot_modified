@@ -149,8 +149,12 @@ async def _add_user_black_word(
         "black_word", "AUTO_ADD_PUNISH_LEVEL"
     ) and user_count > Config.get_config("black_word", "ADD_PUNISH_LEVEL_TO_COUNT"):
         punish_level -= 1
-    await BlackWord.add_user_black_word(
-        user_id, group_id, black_word, message, punish_level
+    await BlackWord.create(
+        user_qq=user_id,
+        group_id=group_id,
+        plant_text=message,
+        black_word=black_word,
+        punish_level=punish_level,
     )
     logger.info(
         f"已将 USER {user_id} GROUP {group_id} 添加至黑名单词汇记录 Black_word：{black_word} Plant_text：{message}"

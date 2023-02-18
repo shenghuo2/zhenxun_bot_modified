@@ -13,7 +13,7 @@ from utils.image_utils import BuildImage
 def image(
     file: Optional[Union[str, Path, bytes, BuildImage, io.BytesIO]] = None,
     b64: Optional[str] = None,
-) -> Union[MessageSegment, str]:
+) -> MessageSegment:
     """
     说明:
         生成一个 MessageSegment.image 消息
@@ -37,7 +37,7 @@ def image(
         return MessageSegment.image(file)
     if isinstance(file, BuildImage):
         return MessageSegment.image(file.pic2bs4())
-    return ""
+    return MessageSegment.image("")
 
 
 def at(qq: Union[int, str]) -> MessageSegment:

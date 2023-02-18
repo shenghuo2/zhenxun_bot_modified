@@ -1,9 +1,6 @@
 from tortoise import fields
-from tortoise.models import Model
 
-from services.db_context import add_model
-
-add_model("models.level_user")
+from services.db_context import Model
 
 
 class LevelUser(Model):

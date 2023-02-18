@@ -38,7 +38,7 @@ class logger:
 
     TEMPLATE_USER = "用户[<u><e>{}</e></u>] "
     TEMPLATE_GROUP = "群聊[<u><e>{}</e></u>] "
-    TEMPLATE_COMMAND = "CMD [<u><c>{}</c></u>] "
+    TEMPLATE_COMMAND = "CMD[<u><c>{}</c></u>] "
     TEMPLATE_TARGET = "[Target]([<u><e>{}</e></u>]) "
 
     SUCCESS_TEMPLATE = "[<u><c>{}</c></u>]: {} | 参数[{}] 返回: [<y>{}</y>]"
@@ -101,7 +101,7 @@ class logger:
     ):
         template = cls.__parser_template(info, command, user_id, group_id, target)
         if e:
-            template += f" || 错误<r>{type(e)}: {e}</r>"
+            template += f" || 错误 <r>{type(e)}: {e}</r>"
         logger_.opt(colors=True).error(template)
 
     @classmethod

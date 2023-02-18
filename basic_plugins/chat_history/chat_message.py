@@ -42,7 +42,7 @@ async def _(event: MessageEvent, msg: str = PlaintText()):
 
 @scheduler.scheduled_job(
     "interval",
-    minute=1,
+    minutes=1,
 )
 async def _():
     try:

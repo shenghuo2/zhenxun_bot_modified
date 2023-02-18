@@ -36,12 +36,11 @@ driver: Driver = nonebot.get_driver()
 async def init_image():
     SIGN_RESOURCE_PATH.mkdir(parents=True, exist_ok=True)
     SIGN_TODAY_CARD_PATH.mkdir(exist_ok=True, parents=True)
-    if not await GroupInfoUser.filter(user_qq=114514).first():
+    if not await GroupInfoUser.get_or_none(user_qq=114514):
         await GroupInfoUser.create(
             user_qq=114514,
             group_id=114514,
             user_name="",
-            user_join_time=datetime.min,
             uid=0,
         )
     generate_progress_bar_pic()
@@ -257,7 +256,7 @@ def _generate_card(
         )
         today_data.text(
             (0, 50),
-            f"色图概率：{(default_setu_prob + user.impression if user.impression < 100 else 100):.2f}%",
+            f"色图概率：{(default_setu_prob + float(user.impression) if user.impression < 100 else 100):.2f}%",
         )
         today_data.text((0, 75), f"开箱次数：{(20 + int(user.impression / 3))}")
         _type = "view"

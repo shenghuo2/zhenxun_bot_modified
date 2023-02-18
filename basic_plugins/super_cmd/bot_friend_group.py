@@ -143,7 +143,7 @@ async def _():
     for type_ in ["private", "group"]:
         msg = await requests_manager.show(type_)
         if msg:
-            _str += image(b64=msg)
+            _str += image(msg)
         else:
             _str += "没有任何好友请求.." if type_ == "private" else "没有任何群聊请求.."
         if type_ == "private":

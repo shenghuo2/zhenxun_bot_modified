@@ -160,13 +160,15 @@ class DailyNumberLimiter:
         self.count[key] = 0
 
 
-def is_number(s: str) -> bool:
+def is_number(s: Union[int, str]) -> bool:
     """
     说明:
         检测 s 是否为数字
     参数:
         :param s: 文本
     """
+    if isinstance(s, int):
+        return True
     try:
         float(s)
         return True

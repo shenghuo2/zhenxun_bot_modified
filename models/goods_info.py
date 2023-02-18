@@ -5,13 +5,12 @@ from tortoise import fields
 from services.db_context import Model
 
 
-
 class GoodsInfo(Model):
     __tablename__ = "goods_info"
 
     id = fields.IntField(pk=True, generated=True, auto_increment=True)
     """自增id"""
-    goods_name = fields.TextField( unique=True)
+    goods_name = fields.CharField(255, unique=True)
     """商品名称"""
     goods_price = fields.IntField()
     """价格"""
@@ -21,15 +20,13 @@ class GoodsInfo(Model):
     """折扣"""
     goods_limit_time = fields.BigIntField(default=0)
     """限时"""
-    daily_limit = fields.IntField( default=0)
+    daily_limit = fields.IntField(default=0)
     """每日限购"""
-    daily_purchase_limit: Dict[str, Dict[str, int]] = fields.JSONField(
-         default={}connect 101.34.44.241
-    )
+    daily_purchase_limit: Dict[str, Dict[str, int]] = fields.JSONField(default={})
     """用户限购记录"""
-    is_passive = fields.BooleanField( default=False)
+    is_passive = fields.BooleanField(default=False)
     """是否为被动道具"""
-    icon = fields.TextField()
+    icon = fields.TextField(null=True)
     """图标路径"""
 
     class Meta:
@@ -81,7 +78,7 @@ class GoodsInfo(Model):
         参数:
             :param goods_name: 商品名称
         """
-        if goods := await cls.filter(goods_name=goods_name).first():
+        if goods := await cls.get_or_none(goods_name=goods_name):
             await goods.delete()
             return True
         return False
@@ -97,7 +94,7 @@ class GoodsInfo(Model):
         daily_limit: Optional[int] = None,
         is_passive: Optional[bool] = None,
         icon: Optional[str] = None,
-    ) -> bool:
+    ):
         """
         说明:
             更新商品信息
@@ -111,22 +108,25 @@ class GoodsInfo(Model):
             :param is_passive: 是否为被动
             :param icon: 图标
         """
-        if goods := await cls.filter(goods_name=goods_name).first():
-            await goods.update_or_create(
-                goods_price=goods_price or goods.goods_price,
-                goods_description=goods_description or goods.goods_description,
-                goods_discount=goods_discount or goods.goods_discount,
-                goods_limit_time=goods_limit_time
-                if goods_limit_time is not None
-                else goods.goods_limit_time,
-                daily_limit=daily_limit
-                if daily_limit is not None
-                else goods.daily_limit,
-                is_passive=is_passive if is_passive is not None else goods.is_passive,
-                icon=icon or goods.icon,
+        if goods := await cls.get_or_none(goods_name=goods_name):
+            await cls.update_or_create(
+                goods_name=goods_name,
+                defaults={
+                    "goods_price": goods_price or goods.goods_price,
+                    "goods_description": goods_description or goods.goods_description,
+                    "goods_discount": goods_discount or goods.goods_discount,
+                    "goods_limit_time": goods_limit_time
+                    if goods_limit_time is not None
+                    else goods.goods_limit_time,
+                    "daily_limit": daily_limit
+                    if daily_limit is not None
+                    else goods.daily_limit,
+                    "is_passive": is_passive
+                    if is_passive is not None
+                    else goods.is_passive,
+                    "icon": icon or goods.icon,
+                },
             )
-            return True
-        return False
 
     @classmethod
     async def get_all_goods(cls) -> List["GoodsInfo"]:

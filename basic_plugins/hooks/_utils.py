@@ -102,7 +102,7 @@ async def send_msg(msg: str, bot: Bot, event: MessageEvent):
                 event.user_id, event.group_id
             )
         else:
-            nickname = await FriendUser.get_friend_nickname(event.user_id)
+            nickname = await FriendUser.get_user_nickname(event.user_id)
         msg = msg.replace("[nickname]", nickname)
     if "[at]" in msg and isinstance(event, GroupMessageEvent):
         msg = msg.replace("[at]", str(at(event.user_id)))
@@ -143,16 +143,19 @@ class AuthChecker:
             :param event: event
         """
         try:
-            plugin_name = matcher.plugin_name
-            cost_gold = await self.auth_cost(plugin_name, bot, event)
-            if hasattr(event, "user_id") and str(event.user_id) not in bot.config.superusers:
-                await self.auth_basic(plugin_name, bot, event)
-                self.auth_group(plugin_name, bot, event)
-                await self.auth_admin(plugin_name, matcher, bot, event)
-                await self.auth_plugin(plugin_name, matcher, bot, event)
-                await self.auth_limit(plugin_name, bot, event)
-                if cost_gold:
-                    await BagUser.spend_gold(event.user_id, event.group_id, cost_gold)
+            if plugin_name := matcher.plugin_name:
+                cost_gold = await self.auth_cost(plugin_name, bot, event)
+                user_id = getattr(event, "user_id", None)
+                if user_id and str(user_id) not in bot.config.superusers:
+                    await self.auth_basic(plugin_name, bot, event)
+                    self.auth_group(plugin_name, bot, event)
+                    await self.auth_admin(plugin_name, matcher, bot, event)
+                    await self.auth_plugin(plugin_name, matcher, bot, event)
+                    await self.auth_limit(plugin_name, bot, event)
+                    if cost_gold:
+                        await BagUser.spend_gold(
+                            event.user_id, event.group_id, cost_gold
+                        )
         except IsSuperuserException:
             return
 
@@ -222,7 +225,9 @@ class AuthChecker:
             else:
                 plugins2count_manager.increase(plugin_name, count_type_)
 
-    async def auth_plugin(self, plugin_name: str, matcher: Matcher, bot: Bot, event: Event):
+    async def auth_plugin(
+        self, plugin_name: str, matcher: Matcher, bot: Bot, event: Event
+    ):
         """
         说明:
             插件状态
@@ -366,7 +371,9 @@ class AuthChecker:
                 set_block_limit_false(event, plugin_name)
                 raise IgnoredException("此功能正在维护...")
 
-    async def auth_admin(self, plugin_name: str, matcher: Matcher, bot: Bot, event: Event):
+    async def auth_admin(
+        self, plugin_name: str, matcher: Matcher, bot: Bot, event: Event
+    ):
         """
         说明:
             管理员命令 个人权限
@@ -506,8 +513,13 @@ class AuthChecker:
                     await BagUser.spend_gold(
                         event.user_id, event.group_id, psm.cost_gold
                     )
-                await UserShopGoldLog.add_shop_log(
-                    event.user_id, event.group_id, 2, plugin_name, psm.cost_gold, 1
+                await UserShopGoldLog.create(
+                    user_qq=event.user_id,
+                    group_id=event.group_id,
+                    type=2,
+                    name=plugin_name,
+                    num=1,
+                    spend_gold=psm.cost_gold,
                 )
                 cost_gold = psm.cost_gold
         return cost_gold

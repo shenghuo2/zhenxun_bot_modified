@@ -13,7 +13,6 @@ from configs.config import NICKNAME
 from models.bag_user import BagUser
 from models.group_member_info import GroupInfoUser
 from models.sign_group_user import SignGroupUser
-from services.db_context import db
 from services.log import logger
 from utils.data_utils import init_rank
 from utils.image_utils import BuildImage, BuildMat
@@ -28,18 +27,17 @@ async def group_user_check_in(
 ) -> MessageSegment:
     "Returns string describing the result of checking in"
     present = datetime.now()
-    async with db.transaction():
-        # 取得相应用户
-        user = await SignGroupUser.ensure(user_qq, group)
-        # 如果同一天签到过，特殊处理
-        if (
-            user.checkin_time_last + timedelta(hours=8)
-        ).date() >= present.date() or f"{user}_{group}_sign_{datetime.now().date()}" in os.listdir(
-            SIGN_TODAY_CARD_PATH
-        ):
-            gold = await BagUser.get_gold(user_qq, group)
-            return await get_card(user, nickname, -1, gold, "")
-        return await _handle_check_in(nickname, user_qq, group, present)  # ok
+    # 取得相应用户
+    user, is_create = await SignGroupUser.get_or_create(user_qq=user_qq, group_id=group)
+    # 如果同一天签到过，特殊处理
+    if not is_create and (
+        user.checkin_time_last.date() >= present.date()
+        or f"{user}_{group}_sign_{datetime.now().date()}"
+        in os.listdir(SIGN_TODAY_CARD_PATH)
+    ):
+        gold = await BagUser.get_gold(user_qq, group)
+        return await get_card(user, nickname, -1, gold, "")
+    return await _handle_check_in(nickname, user_qq, group, present)  # ok
 
 
 async def check_in_all(nickname: str, user_qq: int):
@@ -50,25 +48,24 @@ async def check_in_all(nickname: str, user_qq: int):
         :param nickname: 昵称
         :param user_qq: 用户qq
     """
-    async with db.transaction():
-        present = datetime.now()
-        for u in await SignGroupUser.filter(user_qq=user_qq).all():
-            group = u.group_id
-            if not (
-                (u.checkin_time_last + timedelta(hours=8)).date() >= present.date()
-                or f"{u}_{group}_sign_{datetime.now().date()}"
-                in os.listdir(SIGN_TODAY_CARD_PATH)
-            ):
-                await _handle_check_in(nickname, user_qq, group, present)
+    present = datetime.now()
+    for u in await SignGroupUser.filter(user_qq=user_qq).all():
+        group = u.group_id
+        if not (
+            u.checkin_time_last.date() >= present.date()
+            or f"{u}_{group}_sign_{datetime.now().date()}"
+            in os.listdir(SIGN_TODAY_CARD_PATH)
+        ):
+            await _handle_check_in(nickname, user_qq, group, present)
 
 
 async def _handle_check_in(
     nickname: str, user_qq: int, group: int, present: datetime
 ) -> MessageSegment:
-    user = await SignGroupUser.ensure(user_qq, group)
+    user, _ = await SignGroupUser.get_or_create(user_qq=user_qq, group_id=group)
     impression_added = (secrets.randbelow(99) + 1) / 100
     critx2 = random.random()
-    add_probability = user.add_probability
+    add_probability = float(user.add_probability)
     specify_probability = user.specify_probability
     if critx2 + add_probability > 0.97:
         impression_added *= 2
@@ -98,7 +95,7 @@ async def _handle_check_in(
 
 async def group_user_check(nickname: str, user_qq: int, group: int) -> MessageSegment:
     # heuristic: if users find they have never checked in they are probable to check in
-    user = await SignGroupUser.ensure(user_qq, group)
+    user, _ = await SignGroupUser.get_or_create(user_qq=user_qq, group_id=group)
     gold = await BagUser.get_gold(user_qq, group)
     return await get_card(user, nickname, None, gold, "", is_card_view=True)
 

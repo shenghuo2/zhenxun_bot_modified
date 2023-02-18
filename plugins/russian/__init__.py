@@ -444,8 +444,12 @@ async def end_game(bot: Bot, event: GroupMessageEvent):
     await RussianUser.money(lose_user_id, event.group_id, "lose", money)
     await BagUser.add_gold(win_user_id, event.group_id, money - fee)
     await BagUser.spend_gold(lose_user_id, event.group_id, money)
-    win_user = await RussianUser.ensure(win_user_id, event.group_id)
-    lose_user = await RussianUser.ensure(lose_user_id, event.group_id)
+    win_user, _ = await RussianUser.get_or_create(
+        user_qq=win_user_id, group_id=event.group_id
+    )
+    lose_user, _ = await RussianUser.get_or_create(
+        user_qq=lose_user_id, group_id=event.group_id
+    )
     bullet_str = ""
     for x in rs_player[event.group_id]["bullet"]:
         bullet_str += "__ " if x == 0 else "| "
@@ -471,7 +475,9 @@ async def end_game(bot: Bot, event: GroupMessageEvent):
 
 @record.handle()
 async def _(event: GroupMessageEvent):
-    user = await RussianUser.ensure(event.user_id, event.group_id)
+    user, _ = await RussianUser.get_or_create(
+        user_qq=event.user_id, group_id=event.group_id
+    )
     await record.send(
         f"俄罗斯轮盘\n"
         f"总胜利场次：{user.win_count}\n"
