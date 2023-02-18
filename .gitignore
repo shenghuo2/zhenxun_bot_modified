@@ -156,8 +156,9 @@ data/
 .env.dev
 /resources/text/
 /resources/image/
+/resources/temp/
 !/resources/template/
-configs/config.py
+/configs/config.py
 configs/config.yaml
 ./.env
 ./.env.dev
