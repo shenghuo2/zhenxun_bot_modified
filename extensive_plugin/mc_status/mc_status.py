@@ -26,13 +26,11 @@ def mc_status_get(ip):
         pic = base64.b64decode(status.favicon[22::])
         open('logo1.png', 'wb').write(pic)
         fr = Image.open('logo1.png').resize((100,100))
-        frame = Image.new("RGB", (700, 128), (25, 25, 25))
+        frame = Image.new("RGB", (800, 128), (25, 25, 25))
         frame.paste(fr, (10 , 14))
         draw = ImageDraw.Draw(frame)
         # 字体函数定义
         def draw_text(x, y,text, fill,fontsize,):
-            # import os
-            # print("路径为："+os.getcwd())
             font = ImageFont.truetype(fontPath, fontsize)
             draw.text((x, y), text, fill=fill, font=font)
 
@@ -98,9 +96,9 @@ def mc_status_get(ip):
                     x += width
         
         colorful_describe()
-        draw_text(570, 25, ping, fill=(124,255,0), fontsize=14)
+        draw_text(570, 25, ping, fill=(124,251,0), fontsize=14)
         draw_text(120, 95, onlineCount , fill=(160, 32, 240), fontsize=17)
-        draw_text(335, 95, "版本: ", fill=(130, 120, 100), fontsize=16)
+        draw_text(335, 95, "版本: ", fill=(130, 111, 90), fontsize=16)
         # 处理version长度过长的问题
         if (len(version) > 80):
             version = version[:40] + "\n"   + version[40:80:] + "\n" + version[80::]
@@ -124,8 +122,10 @@ def mc_status_get(ip):
         draw.text((40, 10), ip + "\n服务器不存在或离线", fill='white', font=ImageFont.truetype(fontPath, 30))
         buffer = io.BytesIO()
         frame.save(buffer,"PNG")
-        buf_bytes=buffer.getvalue() # 从内存中取出bytes类型的图片
-        base64_data=str(base64.b64encode(buf_bytes))[2:-1:] # 将bytes类型按base64进行编码，返回值还是bytes类型
+        # 从内存中取出bytes类型的图片
+        buf_bytes=buffer.getvalue()
+        # 将bytes类型按base64进行编码，返回值还是bytes类型
+        base64_data=str(base64.b64encode(buf_bytes))[2:-1:]
         
         return base64_data
 def mc_player_list_get(ip):
@@ -143,4 +143,4 @@ def mc_player_list_get(ip):
         return "服务器不存在或离线\n或者服务器没有开启玩家列表"
 
 
-base64.b64decode(mc_status_get('mc.magicst.cn'))
+# base64.b64decode(mc_status_get('mc.magicst.cn'))
