@@ -9,7 +9,8 @@ from services.log import logger
 from utils.message_builder import image
 from nonebot.adapters.onebot.v11.permission import GROUP
 from nonebot.adapters.onebot.v11 import GroupMessageEvent
-from datetime import datetime
+from .tools import gen_flag, CET4
+
 
 __zx_plugin_name__ = "生活小工具合集"
 __plugin_usage__ = """
@@ -40,23 +41,6 @@ __plugin_cd_limit__ = {
 ip_query_command = on_command("#IP", priority=5, block=True)
 gen_flag_command = on_command("#flag", priority=5, block=True)
 
-def CET4():
-    today = datetime.today()
-    if today > datetime(today.year, 6, 10):
-
-        future = datetime.strptime(f'{today.year}-12-10 09:00:00','%Y-%m-%d %H:%M:%S')
-    else:
-        future = datetime.strptime(f'{today.year}-06-10 09:00:00','%Y-%m-%d %H:%M:%S')
-    #当前时间
-    now=datetime.now()
-    #时间差
-    delta = future-now
-    hour = delta.seconds/60/60
-    minute = (delta.seconds -hour*60*60)/60
-    seconds=delta.seconds-hour*60*60 - minute*60
-    print_now=now.strftime('%Y-%m-%d %H:%M:%S')
-
-    return (f"现在是北京时间: ,{print_now}\n距离英语四级笔试考试还有：{delta.days}天")
 
 
 
@@ -75,3 +59,15 @@ async def got_CET4_command(bot: Bot, event: Event, state: T_State):
     msg = CET4()
     await CET4_command.finish(message = msg)
 
+# flag生成
+@gen_flag_command.handle()
+async def handle_gen_flag(bot: Bot, event: Event, state: T_State):
+    args = str(event.get_message()).strip()
+    if args:
+        state["#flag"] = args
+
+
+@gen_flag_command.got("#flag", prompt="输入#flag")
+async def got_gen_flag(bot: Bot, event: Event, state: T_State):
+    msg = gen_flag()
+    await gen_flag_command.finish(message = msg)
