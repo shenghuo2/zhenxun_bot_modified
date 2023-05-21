@@ -96,6 +96,8 @@ __plugin_resources__ = {
     "images": IMAGE_PATH / "petpet", }
 # ======================== zhenxun import ===============================
 
+# ======================== nonebot import ===============================
+
 # help_cmd = on_command("头像表情包", aliases={"头像相关表情包", "头像相关表情制作"}, block=True, priority=5)
 
 # __plugin_meta__ = PluginMetadata(
@@ -109,12 +111,14 @@ __plugin_resources__ = {
 #     },
 # )
 
-memes_cache_dir = get_cache_dir("nonebot_plugin_memes")
-
-
 # PERM_EDIT = GROUP_ADMIN | GROUP_OWNER | PRIVATE_FRIEND | PRIVATE | SUPERUSER
 # PERM_GLOBAL = SUPERUSER
 
+# ======================== nonebot import ===============================
+
+
+
+memes_cache_dir = get_cache_dir("nonebot_plugin_memes")
 help_cmd = on_command("表情包制作", aliases={"头像表情包", "文字表情包"}, block=True, priority=5)
 info_cmd = on_command("表情详情", aliases={"表情帮助", "表情示例"}, block=True, priority=5)
 block_cmd = on_command("禁用表情", block=True, priority=9)
