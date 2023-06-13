@@ -148,7 +148,6 @@ fantasy_card/
 data/
 log/
 backup/
-extensive_plugin/
 test/
 bot.py
 data/
@@ -181,3 +180,10 @@ plugins/activity/
 !/resources/image/genshin/alc/back.png
 !/data/genshin_alc/
 .vscode/launch.json
+
+
+# extensive_plugin
+extensive_plugin/*.pyc
+
+
+qrCode/*.png
