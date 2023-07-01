@@ -4,7 +4,8 @@ from mcstatus import JavaServer
 from PIL import Image, ImageDraw, ImageFilter,ImageFont
 
 fontPath = '.\\extensive_plugin\\mc_status\\Arial-Unicode-Regular.ttf'
-
+pixelFontPath = '.\\extensive_plugin\\mc_status\\方正像素14.ttf'
+# fontPath = pixelFontPath
 # 状态函数
 def mc_status_get(ip):
 
@@ -23,15 +24,23 @@ def mc_status_get(ip):
         # 替换掉样式代码 klnmor
         discribe = discribe.replace('§k','').replace('§l','').replace('§m','').replace('§n','').replace('§o','').replace('§r','')
         # logo
-        pic = base64.b64decode(status.favicon[22::])
-        open('logo1.png', 'wb').write(pic)
-        fr = Image.open('logo1.png').resize((100,100))
+        if status.favicon is not None:
+            pic = base64.b64decode(status.favicon[22::])
+            open('logo1.png', 'wb').write(pic)
+            fr = Image.open('.\\extensive_plugin\\mc_status\\logo1.png').resize((100,100))
+        else:
+            fr = Image.open('.\\extensive_plugin\\mc_status\\defaultLOGO.png')
         frame = Image.new("RGB", (650, 128), (25, 25, 25))
         frame.paste(fr, (10 , 14))
         draw = ImageDraw.Draw(frame)
         # 字体函数定义
         def draw_text(x, y,text, fill,fontsize,):
             font = ImageFont.truetype(fontPath, fontsize)
+            draw.text((x, y), text, fill=fill, font=font)
+
+        # 像素字 函数定义
+        def draw_Pixeltext(x, y,text, fill,fontsize,):
+            font = ImageFont.truetype(pixelFontPath, fontsize)
             draw.text((x, y), text, fill=fill, font=font)
 
         # draw_text(128, 25, discribe, fill=(255,170,0), fontsize=15)
@@ -96,18 +105,18 @@ def mc_status_get(ip):
                     x += width
         
         colorful_describe()
-        draw_text(570, 25, ping, fill=(124,251,0), fontsize=14)
-        draw_text(120, 95, onlineCount , fill=(160, 32, 240), fontsize=17)
-        draw_text(335, 95, "版本: ", fill=(130, 111, 90), fontsize=16)
+        draw_Pixeltext(570, 25, ping, fill=(124,251,0), fontsize=15)
+        draw_Pixeltext(120, 95, onlineCount , fill=(160, 32, 240), fontsize=18)
+        draw_Pixeltext(335, 95, "版本: ", fill=(130, 111, 90), fontsize=16)
         # 处理version长度过长的问题
         if (len(version) > 80):
             version = version[:40] + "\n"   + version[40:80:] + "\n" + version[80::]
-            draw_text(375, 75, version, fill='white', fontsize=15)
+            draw_Pixeltext(375, 75, version, fill='white', fontsize=15)
         elif(len(version) > 40):
             version = version[:40] + "\n"   + version[40::]
-            draw_text(375, 85, version, fill='white', fontsize=15)
+            draw_Pixeltext(375, 85, version, fill='white', fontsize=15)
         else:
-            draw_text(375, 95, version, fill='white', fontsize=15)
+            draw_Pixeltext(375, 95, version, fill='white', fontsize=15)
         # 图片写入内存流 并转换为 base64
         buffer = io.BytesIO()
         frame.save(buffer,"PNG")
