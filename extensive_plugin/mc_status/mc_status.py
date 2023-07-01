@@ -19,14 +19,14 @@ def mc_status_get(ip):
         onp = "{status.players.online}/{status.players.max}".format(status=status)
         onlineCount = "在线人数： " + str(onp)
         # MOTD
-        discribe = str(status.description)
+        discribe = '§f'+str(status.description)
         # 替换掉样式代码 klnmor
         discribe = discribe.replace('§k','').replace('§l','').replace('§m','').replace('§n','').replace('§o','').replace('§r','')
         # logo
         pic = base64.b64decode(status.favicon[22::])
         open('logo1.png', 'wb').write(pic)
         fr = Image.open('logo1.png').resize((100,100))
-        frame = Image.new("RGB", (800, 128), (25, 25, 25))
+        frame = Image.new("RGB", (650, 128), (25, 25, 25))
         frame.paste(fr, (10 , 14))
         draw = ImageDraw.Draw(frame)
         # 字体函数定义
