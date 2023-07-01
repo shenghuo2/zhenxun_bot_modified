@@ -12,7 +12,7 @@ def CET4():
     now=datetime.now()
     #时间差
     delta = future-now
-    # 这些好像没用上吧，是chatgpt写的
+    # 这些好像没用上吧，是ChatGPT写的
     # hour = delta.seconds/60/60
     # minute = (delta.seconds - hour*60*60)/60
     # seconds = delta.seconds-hour*60*60 - minute*60
