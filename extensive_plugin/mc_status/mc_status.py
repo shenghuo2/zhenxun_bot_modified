@@ -26,7 +26,7 @@ def mc_status_get(ip):
         # logo
         if status.favicon is not None:
             pic = base64.b64decode(status.favicon[22::])
-            open('logo1.png', 'wb').write(pic)
+            open('.\\extensive_plugin\\mc_status\\logo1.png', 'wb').write(pic)
             fr = Image.open('.\\extensive_plugin\\mc_status\\logo1.png').resize((100,100))
         else:
             fr = Image.open('.\\extensive_plugin\\mc_status\\defaultLOGO.png')
@@ -74,7 +74,7 @@ def mc_status_get(ip):
 
             # Split the text by the key identifier
             parts = discribe.split("§")
-            print(parts)
+            # print(parts)
 
             # Set the starting x and y position for the text
             x = 128
