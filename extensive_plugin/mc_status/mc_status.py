@@ -141,7 +141,7 @@ def mc_player_list_get(ip):
     server = JavaServer.lookup(ip)
     try:
         status = server.status()
-        player_list = "玩家列表（一部分）：\n"
+        player_list = f"玩家列表 (人数: {status.players.online}/{status.players.max})：\n"
         # 在线列表
         for j in status.players.sample:
             
