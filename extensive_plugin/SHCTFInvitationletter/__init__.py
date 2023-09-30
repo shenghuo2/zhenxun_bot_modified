@@ -31,7 +31,7 @@ __plugin_settings__ = {
 __plugin_type__ = ('工具',)
 __plugin_cd_limit__ = {
     "cd": 1,
-    "rst": "冷静点，要坏掉惹！"
+    "rst": "冷静点，要坏掉惹！" 
 }
 # 命令注册
 SHCTF2023_invitation_gen = on_command("#邀请函", priority=3, block=True)
