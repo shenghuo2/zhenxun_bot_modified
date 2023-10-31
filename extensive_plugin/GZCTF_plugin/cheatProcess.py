@@ -146,22 +146,30 @@ def statistCheatDetect(GZCTF_Token:str, platURL:str, GameID)->str:
     message = ""
     cheat_list = {}
     for i in cheatinfo:
-
-        # if i['ownedTeam']['id'] in cheat_list and cheat_list[i['ownedTeam']['id']] == i['submitTeam']['id']:
-        if i['submission']['challenge'] not in cheat_list:
-            cheat_list[i['submission']['challenge']] = 1
-        if i['submission']['challenge'] in cheat_list:
-            cheat_list[i['submission']['challenge']] +=1
-            # continue
-        # cheat_list[i['ownedTeam']['id']] = i['submitTeam']['id']
-
-    # cheats_list = set( list(cheat_list.keys()) + list(cheat_list.values()))
-
+        # print()
+        # if i['ownedTeam']['status'] == 'Accepted':
+            # if i['submitTeam']['team']['name'] == "Nixiak":
+                # continue
+        if i['ownedTeam']['id'] in cheat_list and cheat_list[i['ownedTeam']['id']] == i['submitTeam']['id']:
+            continue
+        cheat_list[i['ownedTeam']['id']] = i['submitTeam']['id']
+        # message += ("检测到未处理的作弊!!!\n" \
+        # +f"检测时间: {i['submission']['time']}\n"\
+        # +f"题目信息：{i['submission']['challenge']}，flag：{i['submission']['answer']}\n" \
+        # +f"被提交flag的队伍：{i['ownedTeam']['team']['name']}\n提交flag的队伍：{i['submitTeam']['team']['name']}\n"\
+        # +f"提交者{i['submission']['user']}\n" \
+        # )
+    cheats_list = set( list(cheat_list.keys()) + list(cheat_list.values()))
+    # print((cheats_list))
+    # print(len((cheats_list)))
+    # print(', '.join([str(i) for i in cheats_list]))
+    
+    message += "目前作弊队伍ID列表为:" + ', '.join([str(i) for i in cheats_list])
+    message += "\n目前作弊队伍数量为:" + str(len((cheats_list)))
+    # print(list(cheat_list.keys()) + list(cheat_list.values()))
+            # print(i)
+            # print(message)
     # print(cheat_list)
-    # message += "目前作弊队伍ID列表为:" + ', '.join([str(i) for i in cheats_list])
-    # message += "\n目前作弊队伍数量为:" + str(len((cheats_list)))
-    message += "产生作弊的题目为:" + ', '.join([str(i) for i in cheat_list.keys()])
-    # message += "\n目前作弊队伍数量为:" + str(((max(cheat_list.values()))))
     if message != "":
         return message
     else:
@@ -182,4 +190,3 @@ def SHCTF_team_static_cheat_Detect():
     return messages
 
 print(SHCTF_team_static_cheat_Detect())
-
