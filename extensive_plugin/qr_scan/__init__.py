@@ -52,12 +52,28 @@ QR_message = on_command("scan", priority=5, block=True)
 @QR_message.handle()
 async def QR_message_(bot: Bot,event: MessageEvent,state: T_State):
     print("触发qrcode")
+    
     msg = event.json()
     msg = json.loads(msg)
-    print(type(msg))
+    if event.reply:
+        # 新增回复扫码
+        evt = bot.get_msg(message_id=event.reply.message_id)
+        # msg = print
+        # msg = json.loads(msg)
+        # logger.info("evt type:",type(event))
+        # logger.info("reply.message type:",type(event.reply.message))
+        # logger.info( str(evt))
+        # msg = json.loads(str(evt))
+    # print((msg))
+    # print(type(msg))
+    # print()
     # print(str(event.json()))
-    if [types['data']['url']  for types in msg['message'] if types['type']=='image']:
-        url = [types['data']['url']  for types in msg['message'] if types['type']=='image'][0]
+    if [types['data']['url']  for types in msg['message'] if types['type']=='image'] or [types for types in msg if types == 'reply']:
+        # 增加一种判断方式
+        if [types['data']['url']  for types in msg['message'] if types['type']=='image']:
+            url = [types['data']['url']  for types in msg['message'] if types['type']=='image'][0]
+        if [types for types in msg if types == 'reply']:
+                url = msg['reply']['message'][0]['data']['url']
         print(url)
 
         #保存图片到本地
@@ -68,10 +84,22 @@ async def QR_message_(bot: Bot,event: MessageEvent,state: T_State):
                 f.write(r.content)
                 f.close()
                 #解码二维码
-                image = cv2.imread(temppath+randomname)
-                barcode = pyzbar.decode(image)
-                reader1 = zxing.BarCodeReader()
-                barcode1 = reader1.decode(temppath+randomname)
+            detect_obj = cv2.wechat_qrcode_WeChatQRCode()
+            image = cv2.imread(temppath+randomname)
+            try:
+# try:
+                res,points = detect_obj.detectAndDecode(image)
+                if res != ():
+                    print(res  )
+                    await QR_message.finish(f"[+] 检测到二维码,已自动帮您解码"+Message("[CQ:face,id=320]")+'\n[+] '+res[0]+'\ndecode by qrcode_wechat')
+            except Exception as e:
+                error = ('wechat_scan 错误明细是' + str(e.__class__.__name__) + str(e))
+                logger.info(error)
+                if "Finished" in str(e.__class__.__name__):
+                    await QR_message.finish()
+            barcode = pyzbar.decode(image)
+            reader1 = zxing.BarCodeReader()
+            barcode1 = reader1.decode(temppath+randomname)
             if barcode1.format!=None:
                 await QR_message.finish(f"[+] 检测到{barcode1.format}码,已自动帮您解码"+Message("[CQ:face,id=320]")+'\n[+] '+barcode1.raw+'\ndecode by zxing')
             if barcode:
