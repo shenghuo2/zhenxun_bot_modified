@@ -9,7 +9,7 @@ from services.log import logger
 from utils.message_builder import image
 from nonebot.adapters.onebot.v11.permission import GROUP
 from nonebot.adapters.onebot.v11 import GroupMessageEvent
-from .tools import gen_flag, CET4
+from .tools import gen_flag, CET4, GaoKao
 
 
 __zx_plugin_name__ = "生活小工具合集"
@@ -71,3 +71,19 @@ async def handle_gen_flag(bot: Bot, event: Event, state: T_State):
 async def got_gen_flag(bot: Bot, event: Event, state: T_State):
     msg = gen_flag()
     await gen_flag_command.finish(message = msg)
+
+
+# 高考倒计时
+GaoKao_countdown = on_command("#高考倒计时", priority=5, block=True)
+
+@GaoKao_countdown.handle()
+async def handle_GaoKao_countdown(bot: Bot, event: Event, state: T_State):
+    args = str(event.get_message()).strip()
+    if args:
+        state["#高考倒计时"] = args
+
+
+@GaoKao_countdown.got("#高考倒计时", prompt="输入#高考倒计时")
+async def got_GaoKao_countdown(bot: Bot, event: Event, state: T_State):
+    msg = GaoKao()
+    await GaoKao_countdown.finish(message = msg)
