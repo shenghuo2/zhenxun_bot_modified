@@ -8,8 +8,8 @@ from utils.utils import get_message_text
 from services.log import logger
 from utils.message_builder import image
 from nonebot.adapters.onebot.v11.permission import GROUP
-from nonebot.adapters.onebot.v11 import GroupMessageEvent
-from .tools import gen_flag, CET4, GaoKao
+from nonebot.adapters.onebot.v11 import GroupMessageEvent,PrivateMessageEvent
+from .tools import gen_flag, CET4, GaoKao, DuanWu
 
 
 __zx_plugin_name__ = "生活小工具合集"
@@ -87,3 +87,34 @@ async def handle_GaoKao_countdown(bot: Bot, event: Event, state: T_State):
 async def got_GaoKao_countdown(bot: Bot, event: Event, state: T_State):
     msg = GaoKao()
     await GaoKao_countdown.finish(message = msg)
+
+# 端午
+Duanwu_countdown = on_command("#端午", priority=5, block=True)
+
+@Duanwu_countdown.handle()
+async def handle_Duanwu_countdown(bot: Bot, event: Event, state: T_State):
+    args = str(event.get_message()).strip()
+    if args:
+        state["#端午"] = args
+
+
+@Duanwu_countdown.got("#端午", prompt="输入#端午")
+async def got_Duanwu_countdown(bot: Bot, event: Event, state: T_State):
+    # msg = GaoKao()
+    if isinstance(event, GroupMessageEvent):
+        group_id = event.group_id  # 获取群聊号
+        # msg = f"群聊号：{group_id}\n"
+        if group_id == "963496818":
+            msg = DuanWu()+"\n亲爱的艾草精灵[CQ:at,qq=2293808331],你准备好艾草了吗"
+        elif group_id == "787599185":
+            msg = DuanWu()+"\n亲爱的艾草精灵[CQ:at,qq=1184474159],你准备好艾草了吗"
+        else:
+            msg = DuanWu()
+        await Duanwu_countdown.finish(message = msg)
+
+    elif isinstance(event, PrivateMessageEvent):
+        # user_id = event.user_id  # 获取私聊用户qq号
+        # msg = f"私聊用户号：{user_id}\n"
+        await Duanwu_countdown.finish(message = DuanWu())
+
+    
