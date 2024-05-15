@@ -104,10 +104,11 @@ async def got_Duanwu_countdown(bot: Bot, event: Event, state: T_State):
     if isinstance(event, GroupMessageEvent):
         group_id = event.group_id  # 获取群聊号
         # msg = f"群聊号：{group_id}\n"
-        if group_id == "963496818":
-            msg = DuanWu()+"\n亲爱的艾草精灵[CQ:at,qq=2293808331],你准备好艾草了吗"
-        elif group_id == "787599185":
-            msg = DuanWu()+"\n亲爱的艾草精灵[CQ:at,qq=1184474159],你准备好艾草了吗"
+        logger.info(group_id,type(group_id))
+        if group_id == 963496818:
+            msg = DuanWu()+"\n亲爱的艾草精灵"+Message("[CQ:at,qq=2293808331]")+", 你准备好艾草了吗"
+        elif group_id == 787599185:
+            msg = DuanWu()+"\n亲爱的艾草精灵"+Message("[CQ:at,qq=1184474159]")+", 你准备好艾草了吗"
         else:
             msg = DuanWu()
         await Duanwu_countdown.finish(message = msg)
