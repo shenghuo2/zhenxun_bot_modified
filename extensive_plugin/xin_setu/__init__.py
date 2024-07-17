@@ -81,6 +81,8 @@ async def got_setu_tag_get(bot: Bot, event: Event, state: T_State):
                                         f"总页数：{setuInfoList['body']['pageCount']}页"
                                         )
             ])
+            if setuInfoList['body']['aiType'] == 2:
+                img += MessageSegment.text("\n本作品为AI创作🧐")
             
             if "R-18" not in tagList:
                 for picUrlNum in range(len(imageDict)):
