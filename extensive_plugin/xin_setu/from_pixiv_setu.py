@@ -18,7 +18,7 @@ def getPid(tag):
             'https': 'http://127.0.0.1:10809',
             'http': 'http://127.0.0.1:10809',
         }
-    setuList = requests.get(url=url,headers=heads,proxies=proxy).content
+    setuList = requests.get(url=url,headers=heads).content
     # print(setuList)
     setuList = json.loads(setuList)
     # 判断是否存在数据
@@ -40,7 +40,7 @@ def getCount(tag):
             'https': 'http://127.0.0.1:10809',
             'http': 'http://127.0.0.1:10809',
         }
-    setuList = requests.get(url=url,headers=heads,proxies=proxy).content
+    setuList = requests.get(url=url,headers=heads).content
     # print(setuList)
     setuList = json.loads(setuList)
     return setuList['body']['illustManga']['total']
@@ -57,7 +57,7 @@ def pidToImagebase(PID):
                 'http': 'http://127.0.0.1:10809',
             }
     # 获取二进制数据
-    PicList1 = requests.get(url,headers=heads,proxies=proxy).content
+    PicList1 = requests.get(url,headers=heads).content
     PicList = json.loads(PicList1)
     PicUrl = PicList['body'][0]['urls']['original'].replace('i.pximg.net','i.pixiv.re')
     # print(PicUrl)
@@ -90,7 +90,7 @@ def pidToImageUrl(PID):
                 'http': 'http://127.0.0.1:10809',
             }
     # 获取二进制数据
-    PicList1 = requests.get(url,headers=heads,proxies=proxy).content
+    PicList1 = requests.get(url,headers=heads).content
     # print(PicList1)
     PicList = json.loads(PicList1)
     
@@ -181,7 +181,7 @@ def pidToImageUrl(PID):
 
 # pidToTags("草神")
 
-def pidQueryTags(PID:str):
+def pidQueryTags(PID:str) -> dict:
     url = f'https://www.pixiv.net/ajax/illust/{PID}'
     heads = {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36'
@@ -191,7 +191,7 @@ def pidQueryTags(PID:str):
                 'http': 'http://127.0.0.1:10809',
             }
     # 获取二进制数据
-    PicList1 = requests.get(url,headers=heads,proxies=proxy).content
+    PicList1 = requests.get(url,headers=heads).content
     PicList = json.loads(PicList1)
     # if PicList['error'] != True:
     # print( PicList['body']['tags']['tags'])
@@ -276,7 +276,7 @@ def getSetuList(tag):
             'https': 'http://127.0.0.1:10809',
             'http': 'http://127.0.0.1:10809',
         }
-    setuList = requests.get(url=url,headers=heads,proxies=proxy).content
+    setuList = requests.get(url=url,headers=heads).content
     setuList = json.loads(setuList)
     # 判断是否存在数据
     if setuList['body']['illustManga']['total'] < 5:
