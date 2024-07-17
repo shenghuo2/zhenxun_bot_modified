@@ -70,8 +70,16 @@ async def got_setu_tag_get(bot: Bot, event: Event, state: T_State):
             
 
             img = Message([
-                    MessageSegment.text(f"作品名：{setuInfoList['body']['illustTitle']}\n画师名：{setuInfoList['body']['userName']}\n画师id：{setuInfoList['body']['userId']}\n"),
-                    MessageSegment.text(f"分辨率：{setuInfoList['body']['height']}x{setuInfoList['body']['width']}\n标签：{tagList}\n总页数：{setuInfoList['body']['pageCount']}页")
+                    MessageSegment.text(
+                                        f"作品名：{setuInfoList['body']['illustTitle']}\n"\
+                                        f"画师名：{setuInfoList['body']['userName']}\n"\
+                                        f"画师id：{setuInfoList['body']['userId']}\n"
+                                        ),
+                    MessageSegment.text(
+                                        f"分辨率：{setuInfoList['body']['height']}x{setuInfoList['body']['width']}\n"\
+                                        f"标签：{tagList}\n"\
+                                        f"总页数：{setuInfoList['body']['pageCount']}页"
+                                        )
             ])
             
             if "R-18" not in tagList:
@@ -131,9 +139,20 @@ async def got_setu_tag_get(bot: Bot, event: Event, state: T_State):
         tag = tag.replace("%20",' ')
         img = Message([
                         
-                        MessageSegment.text(f"pid：{setuDict['id']}\n作品名：{setuDict['title']}\n"), 
-                        MessageSegment.text(f"标签：{','.join(setuDict['tags'])}\n分辨率：{setuDict['height']}x{setuDict['width']}\n总页数：{setuDict['pageCount']}页\n"), 
-                        MessageSegment.text(f"作者名：{setuDict['userName']}\n作者uid：{setuDict['userId']}\n\"{tag}\"的搜索结果有{search_Count}条\n"),
+                        MessageSegment.text(
+                                            f"pid：{setuDict['id']}\n"\
+                                            f"作品名：{setuDict['title']}\n"
+                                            ), 
+                        MessageSegment.text(
+                                            f"标签：{','.join(setuDict['tags'])}"\
+                                            f"\n分辨率：{setuDict['height']}x{setuDict['width']}\n"\
+                                            f"总页数：{setuDict['pageCount']}页\n"
+                                            ), 
+                        MessageSegment.text(
+                                            f"作者名：{setuDict['userName']}\n"\
+                                            f"作者uid：{setuDict['userId']}\n"\
+                                            f"\"{tag}\"的搜索结果有{search_Count}条\n"
+                                    ),
                     ])
         for picUrlNum in range(len(imageDict)):
             img += MessageSegment.image(f'{imageDict[picUrlNum]}')
