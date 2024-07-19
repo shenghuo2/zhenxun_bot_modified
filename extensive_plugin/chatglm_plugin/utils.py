@@ -85,6 +85,8 @@ def convert_jfif_to_base64_jpg(url):
 
     # 打开 JFIF 图像
     with Image.open(BytesIO(response.content)) as img:
+        if img.mode in ('RGBA', 'P'):
+            img = img.convert('RGB')
         # 创建一个 BytesIO 对象来保存图像数据
         buffer = BytesIO()
         # 将图像保存为 JPEG 格式到 BytesIO 对象
