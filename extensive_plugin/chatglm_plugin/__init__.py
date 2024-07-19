@@ -42,7 +42,7 @@ __plugin_cd_limit__ = {
     "rst": "冷静点，要坏掉惹！" 
 }
 # 命令注册
-ai_question_and_answer = on_command("#AI", priority=5, block=True)
+ai_question_and_answer = on_command("#AI",aliases={'#ai'}, priority=5, block=True)
 @ai_question_and_answer.handle()
 async def handle_QA_args(bot: Bot, event: Event, state: T_State):
     args = str(event.get_message()).strip()
