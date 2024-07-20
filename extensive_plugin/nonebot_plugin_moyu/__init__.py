@@ -55,7 +55,7 @@ async def get_calendar() -> str:
     if response.is_error:
         raise ValueError(f"摸鱼日历获取失败，错误码：{response.status_code}")
     content = response.json()
-    return content["data"]["moyu_url"]
+    return content["data"]["img_url"]
 
 
 @driver.on_startup
