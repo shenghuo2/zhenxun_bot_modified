@@ -51,11 +51,11 @@ driver = get_driver()
 
 async def get_calendar() -> str:
     async with httpx.AsyncClient() as client:
-        response = await client.get("https://api.j4u.ink/v1/store/other/proxy/remote/moyu.json")
+        response = await client.get("https://api.vvhan.com/api/moyu?type=json")
     if response.is_error:
         raise ValueError(f"摸鱼日历获取失败，错误码：{response.status_code}")
     content = response.json()
-    return content["data"]["img_url"]
+    return content["url"]
 
 
 @driver.on_startup
@@ -95,7 +95,7 @@ def calendar_subscribe(group_id: str, hour: str, minute: str) -> None:
     logger.debug(f"群[{group_id}]设置摸鱼日历推送时间为：{hour}:{minute}")
 
 
-moyu_matcher = on_command("摸鱼日历", aliases={"摸鱼"})
+moyu_matcher = on_command("摸鱼日历", aliases={"摸鱼人日历"})
 
 
 @moyu_matcher.handle()
