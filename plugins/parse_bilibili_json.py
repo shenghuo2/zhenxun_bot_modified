@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 
 import aiohttp
@@ -121,14 +122,17 @@ async def _(event: GroupMessageEvent):
                 url = f"https://www.bilibili.com/video/{msg}"
                 vd_info = await video.get_video_base_info(msg)
         elif "av" in msg:
-            index = msg.find("av")
-            if len(msg[index + 2 :]) >= 1:
-                msg = msg[index + 2 : index + 11]
-                if is_number(msg):
-                    url = f"https://www.bilibili.com/video/av{msg}"
-                    vd_info = await video.get_video_base_info("av" + msg)
-        elif "https://b23.tv" in msg:
-            url = "https://" + msg[msg.find("b23.tv") : msg.find("b23.tv") + 14]
+            # index = msg.find("av")
+            # if len(msg[index + 2 :]) >= 1:
+                # msg = msg[index + 2 : index + 12]
+            match = re.search(r"av(\d{5,17})", msg)
+            av_number = match.group(1)
+            if is_number(av_number):
+                url = f"https://www.bilibili.com/video/av{av_number}"
+                vd_info = await video.get_video_base_info("av" + av_number)
+                
+        elif "https://bili2233.cn" in msg:
+            url = "https://" + msg[msg.find("bili2233.cn") : msg.find("bili2233.cn") + 14 + 5]
             async with aiohttp.ClientSession(headers=get_user_agent()) as session:
                 async with session.get(
                     url,
@@ -138,10 +142,10 @@ async def _(event: GroupMessageEvent):
                     bvid = url.split("/")[-1]
                     vd_info = await video.get_video_base_info(bvid)
 
-        # https:\/\/b23.tv\/BOGZh4I
-    if "https:\/\/b23.tv" in event.raw_message:
+        # https:\/\/bili2233.cn\/BOGZh4I
+    if "https:\/\/bili2233.cn" in event.raw_message:
         msg = event.raw_message
-        url = "https://" + msg[msg.find("b23.tv") : msg.find("b23.tv") + 15].replace('\/','/')
+        url = "https://" + msg[msg.find("bili2233.cn") : msg.find("bili2233.cn") + 15 + 5].replace('\/','/')
         logger.info("小程序URL测试：",url)
         async with aiohttp.ClientSession(headers=get_user_agent()) as session:
             async with session.get(
@@ -164,6 +168,7 @@ async def _(event: GroupMessageEvent):
         ) or url not in _tmp.keys():
             _tmp[url] = time.time()
             aid = vd_info["aid"]
+            bvid = vd_info["bvid"]
             title = vd_info["title"]
             author = vd_info["owner"]["name"]
             reply = vd_info["stat"]["reply"]  # 回复
@@ -176,7 +181,7 @@ async def _(event: GroupMessageEvent):
                 await parse_bilibili_json.send(
                     "[[_task|bilibili_parse]]"
                     + image(vd_info["pic"])
-                    + f"\nav{aid}\n标题：{title}\n"
+                    + f"\nav{aid}\nBV号：{bvid}\n标题：{title}\n"
                     f"UP：{author}\n"
                     f"上传日期：{date}\n"
                     f"回复：{reply}，收藏：{favorite}，投币：{coin}\n"
