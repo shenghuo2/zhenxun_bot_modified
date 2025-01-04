@@ -141,7 +141,29 @@ async def _(event: GroupMessageEvent):
                     url = (str(response.url).split("?")[0]).strip("/")
                     bvid = url.split("/")[-1]
                     vd_info = await video.get_video_base_info(bvid)
-
+        elif "https://b23.tv" in msg:
+            url = "https://" + msg[msg.find("b23.tv") : msg.find("b23.tv") + 14]
+            async with aiohttp.ClientSession(headers=get_user_agent()) as session:
+                async with session.get(
+                    url,
+                    timeout=7,
+                ) as response:
+                    url = (str(response.url).split("?")[0]).strip("/")
+                    bvid = url.split("/")[-1]
+                    vd_info = await video.get_video_base_info(bvid)
+        # https:\/\/b23.tv\/BOGZh4I
+    if "https:\/\/b23.tv" in event.raw_message:
+        msg = event.raw_message
+        url = "https://" + msg[msg.find("b23.tv") : msg.find("b23.tv") + 15].replace('\/','/')
+        logger.info("小程序URL测试：",url)
+        async with aiohttp.ClientSession(headers=get_user_agent()) as session:
+            async with session.get(
+                url,
+                timeout=7,
+            ) as response:
+                url = (str(response.url).split("?")[0]).strip("/")
+                bvid = url.split("/")[-1]
+                vd_info = await video.get_video_base_info(bvid)
         # https:\/\/bili2233.cn\/BOGZh4I
     if "https:\/\/bili2233.cn" in event.raw_message:
         msg = event.raw_message
