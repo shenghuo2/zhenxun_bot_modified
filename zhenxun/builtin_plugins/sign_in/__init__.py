@@ -147,9 +147,70 @@ _sign_matcher.shortcut(
     prefix=True,
 )
 
+# Adding new aliases for the "签到" command
+_sign_matcher.shortcut(
+    "sbk",  # New alias
+    command="签到",
+    arguments=[],
+    prefix=True,
+)
+
+_sign_matcher.shortcut(
+    "sbkf",  # New alias
+    command="签到",
+    arguments=[],
+    prefix=True,
+)
+
+_sign_matcher.shortcut(
+    "傻逼k",  # New alias
+    command="签到",
+    arguments=[],
+    prefix=True,
+)
+
+_sign_matcher.shortcut(
+    "傻逼kf",  # New alias
+    command="签到",
+    arguments=[],
+    prefix=True,
+)
+
+_sign_matcher.shortcut(
+    "zzac",  # New alias
+    command="签到",
+    arguments=[],
+    prefix=True,
+)
+
+_sign_matcher.shortcut(
+    "吱吱艾草",  # New alias
+    command="签到",
+    arguments=[],
+    prefix=True,
+)
 
 @_sign_matcher.assign("$main")
 async def _(session: Uninfo, arparma: Arparma, nickname: str = UserName()):
+    user_id = session.user.id  # 获取用户 QQ 号
+
+    # 检查是否为特定用户，并限制其只能使用 sbk 或 sbkf
+    if user_id == "1415442644":
+        allowed_aliases = ["sbk", "sbkf","傻逼k","傻逼kf"]
+        if arparma.header_match.origin not in allowed_aliases:
+            await MessageUtils.build_message(
+                f"你只能使用以下命令签到：{'、'.join(allowed_aliases)}".replace("傻逼",'**（已过滤）')
+            ).finish()
+    if user_id == "1184474159" or user_id == "1308357113":
+        allowed_aliases = ["吱吱艾草", "zzac"]
+        logger.info("origin",arparma.origin)
+        logger.info("header_match",arparma.header_match)
+        if arparma.header_match.origin not in allowed_aliases:
+            await MessageUtils.build_message(
+                f"你只能使用以下命令签到：{'、'.join(allowed_aliases)}"
+            ).finish()
+
+    # 正常签到逻辑
     path = await SignManage.sign(session, nickname)
     logger.info("签到成功", arparma.header_result, session=session)
     await MessageUtils.build_message(path).finish()
