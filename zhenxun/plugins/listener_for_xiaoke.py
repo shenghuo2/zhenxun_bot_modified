@@ -1,5 +1,5 @@
 from nonebot import on_message, get_driver
-from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment, GroupMessageEvent
 from nonebot.permission import SUPERUSER
 from nonebot.plugin import PluginMetadata
 import re
@@ -36,9 +36,17 @@ _matcher = on_message( block=False)
 
 @_matcher.handle()
 async def handle_message(bot: Bot, event: Event):
+    # 新增：先检查是否是群消息事件
+    if not isinstance(event, GroupMessageEvent):
+        return  # 如果不是群消息事件，直接返回不做处理
+
+    # 将事件类型转换为GroupMessageEvent以访问group_id属性
+    group_event = event  # type: GroupMessageEvent
+    
     # 检查消息是否来自指定群聊和用户
-    logger.info(f"event.group_id:{type(event.group_id)} {event.group_id}, event.user_id: {type(event.user_id)} {event.user_id}")
-    if event.group_id == TARGET_GROUP_ID and event.user_id == TARGET_USER_ID:
+    # logger.info(f"event.group_id:{type(group_event.group_id)} {group_event.group_id}, event.user_id: {type(group_event.user_id)} {group_event.user_id}")
+    
+    if group_event.group_id == TARGET_GROUP_ID and group_event.user_id == TARGET_USER_ID:
         # 检查消息是否包含图片
         message = event.message
         image_urls = [segment for segment in message if isinstance(segment, MessageSegment) and segment.type == "image"]
