@@ -2,7 +2,6 @@ from nonebot import on_message, get_driver
 from nonebot.adapters.onebot.v11 import Bot, Event, Message, MessageSegment, GroupMessageEvent
 from nonebot.permission import SUPERUSER
 from nonebot.plugin import PluginMetadata
-import re
 from zhenxun.configs.utils import Command, PluginExtraData, RegisterConfig, Task
 from zhenxun.services.log import logger
 
