@@ -21,7 +21,7 @@ from nonebot_plugin_userinfo import EventUserInfo, UserInfo
 
 
 # Matchers
-deer: AlconnaMatcher = on_alconna(Alconna("🦌", Args["target?", At]), aliases={"鹿"})
+deer: AlconnaMatcher = on_alconna(Alconna("🦌", Args["target?", At]), aliases={"鹿"}, block=True)
 deer_past: AlconnaMatcher = on_alconna(
     Alconna("补🦌", Args["day", int]), aliases={"补鹿"}
 )
