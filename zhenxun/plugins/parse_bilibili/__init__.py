@@ -134,6 +134,7 @@ async def _(session: EventSession, message: UniMsg):
                 coin = data.vd_info.get("stat", {}).get("coin", "")  # 投币
                 like = data.vd_info.get("stat", {}).get("like", "")  # 点赞
                 danmuku = data.vd_info.get("stat", {}).get("danmaku", "")  # 弹幕
+                view = data.vd_info.get("stat", {}).get("view", "")  # 播放
                 ctime = data.vd_info["ctime"]
                 date = time.strftime("%Y-%m-%d", time.localtime(ctime))
                 logger.info(
@@ -145,7 +146,10 @@ async def _(session: EventSession, message: UniMsg):
                 await MessageUtils.build_message(
                     [
                         _path,
-                        f"av{aid}\n标题：{title}\nUP：{author}\n上传日期：{date}\n回复：{reply}，收藏：{favorite}，投币：{coin}\n点赞：{like}，弹幕：{danmuku}\n{data.vd_url}",
+                        f"av{aid}\n标题：{title}\nUP：{author}\n上传日期：{date}\n" +
+                        f"播放：{view}，评论：{reply}，弹幕：{danmuku}\n" +
+                        f"点赞：{like}，投币：{coin}，收藏：{favorite}\n"+
+                        f"\n{data.vd_url}",
                     ]
                 ).send()
 
