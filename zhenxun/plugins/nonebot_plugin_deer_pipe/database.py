@@ -26,7 +26,7 @@ class UserDeer(SQLModel, table=True):
 
 
 # Initialize database engin
-engine: AsyncEngine = create_async_engine(DATABASE_URL, echo=True)
+engine: AsyncEngine = create_async_engine(DATABASE_URL, echo=False)
 initialized: bool = False
 
 
