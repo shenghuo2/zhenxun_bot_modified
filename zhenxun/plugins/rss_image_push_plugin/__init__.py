@@ -1,6 +1,6 @@
 # main_plugin.py
 from nonebot import get_bot
-from nonebot.adapters.onebot.v11 import MessageSegment, Message, Bot
+from nonebot.adapters.onebot.v11 import MessageSegment, Message
 from nonebot_plugin_apscheduler import scheduler
 from zhenxun.services.log import logger
 from time import sleep
@@ -13,7 +13,7 @@ target_group_id = 787599185  # 目标群聊ID
 # 定义定时任务，每分钟检查一次RSS更新
 @scheduler.scheduled_job("interval", minutes=5)
 
-async def rss_image_forward_job(bot: Bot):
+async def rss_image_forward_job():
     logger.info("Checking for RSS updates...","rss_pix_push")
     try:
         anning_entries = parse_rss(rss_anning_url)  # 获取anning RSS条目
@@ -22,20 +22,20 @@ async def rss_image_forward_job(bot: Bot):
         ManyACG_new_entries = get_new_entries_ID(ManyACG_entries)  # 获取新的条目
         # logger.info(str(ManyACG_new_entries),"rss_pix_push")
         if anning_new_entries:
-            await send_image_to_group(anning_new_entries, bot)  # 发送新的图片到群聊
+            await send_image_to_group(anning_new_entries)  # 发送新的图片到群聊
         if ManyACG_new_entries:
-            await send_image_to_group(ManyACG_new_entries, bot)  # 发送新的图片到群聊
+            await send_image_to_group(ManyACG_new_entries)  # 发送新的图片到群聊
         if anning_new_entries == [] and ManyACG_new_entries == []:
             logger.info("No new RSS entries available.")
     except Exception as e:
         logger.error(f"检查RSS更新失败: {e}")
 
 
-async def send_image_to_group(new_entries, bot: Bot):
+async def send_image_to_group(new_entries):
     """
     
     """
-    # bot = get_bot()
+    bot = get_bot()
     for entry in new_entries:
         # 提取description中的所有图片链接
          
