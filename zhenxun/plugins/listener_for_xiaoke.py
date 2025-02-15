@@ -4,7 +4,8 @@ from nonebot.permission import SUPERUSER
 from nonebot.plugin import PluginMetadata
 from zhenxun.configs.utils import Command, PluginExtraData, RegisterConfig, Task
 from zhenxun.services.log import logger
-
+# Uninfo
+from nonebot_plugin_uninfo import Uninfo
 # 插件元数据
 __plugin_meta__ = PluginMetadata(
     name="转发图片插件",
@@ -31,7 +32,15 @@ FORWARD_GROUP_ID = 787599185  # 转发图片的目标群号
 
 # 创建监听消息的 on_message 事件处理器
 
-_matcher = on_message( block=False)
+async def _rule(session: Uninfo) -> bool:
+    # 从配置中获取群号白名单
+    
+    if session.group.id != "696707598":
+        return False  # 如果群不在白名单中，忽略该消息
+    return True  # 如果群在白名单中，处理消息
+
+
+_matcher = on_message(block=False, rule=_rule)
 
 @_matcher.handle()
 async def handle_message(bot: Bot, event: Event):
