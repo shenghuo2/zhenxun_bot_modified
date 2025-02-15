@@ -136,23 +136,32 @@ import html  # 导入html模块来解码HTML实体
 # 获取转发消息的内容
 async def get_forward_messages(forward_message_id: str, bot: Bot) -> list:
     try:
+        # 获取转发消息
         response: dict = await bot.call_api("get_forward_msg", message_id=forward_message_id)
         messages = response.get("messages", [])
-        # 提取 raw_message 或 file_unique（用于图片）
+        
         forward_messages = []
         for msg in messages:
-            # 解码 HTML 实体，避免出现 &#91; 等编码
-            raw_message = html.unescape(msg["raw_message"])  # 解码 HTML 实体
-            if "file_unique" in str(msg):
-                # 提取 file_unique
-                file_unique = extract_file_unique(msg["raw_message"])
-                forward_messages.append(file_unique)
+            # 检查消息是否包含嵌套转发
+            if "[CQ:forward," in msg["raw_message"]:
+                # 提取time戳
+                timestamp = msg.get("time")
+                # 拼接时间戳
+                forward_messages.append(f"has_Forward_message_with_timestamp_{timestamp}")
             else:
-                forward_messages.append(raw_message)
+                # 解码 HTML 实体，避免出现 &#91; 等编码
+                raw_message = html.unescape(msg["raw_message"])  # 解码 HTML 实体
+                if "file_unique" in str(msg):
+                    # 提取 file_unique
+                    file_unique = extract_file_unique(msg["raw_message"])
+                    forward_messages.append(file_unique)
+                else:
+                    forward_messages.append(raw_message)
         return forward_messages
     except Exception as e:
         logger.error(f"Error fetching forward messages: {e}")
         return []
+
 
 def get_time_diff_str(timestamp: datetime) -> str:
     now = datetime.datetime.utcnow()
@@ -171,6 +180,7 @@ def get_time_diff_str(timestamp: datetime) -> str:
         return f"{time_diff.seconds}秒之前"
     # else:
     #     return "刚刚"
+
 
 _matcher = on_message(priority=1, block=False, rule=_rule)
 
