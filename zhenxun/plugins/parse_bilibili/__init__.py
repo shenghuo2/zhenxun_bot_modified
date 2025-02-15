@@ -57,6 +57,11 @@ _tmp = {}
 
 @_matcher.handle()
 async def _(session: EventSession, message: UniMsg):
+    # if isinstance(session, MessageEvent):
+    # group_id =  session.group_id   # 获取群组 ID
+    # if isinstance(session.event, MessageEvent):
+        # 获取群组 ID
+    
     information_container = InformationContainer()
     # 判断文本消息内容是否相关
     match = None
@@ -142,14 +147,22 @@ async def _(session: EventSession, message: UniMsg):
                 )
                 _tmp[data.vd_url] = time.time()
                 _path = TEMP_PATH / f"{aid}.jpg"
+                vd_url = data.vd_url
+                group_id = session.id3 or session.id2
+                # if group_id is not None:
+                #     logger.info(
+                #                 f"Group ID {group_id} type:{type(group_id)}", "b站解析", session=session
+                # )
+                if group_id == "696707598":
+                    vd_url = _add_junk(vd_url)
                 await AsyncHttpx.download_file(pic, _path)
                 await MessageUtils.build_message(
                     [
                         _path,
                         f"av{aid}\n标题：{title}\nUP：{author}\n上传日期：{date}\n" +
                         f"播放：{view}，评论：{reply}，弹幕：{danmuku}\n" +
-                        f"点赞：{like}，投币：{coin}，收藏：{favorite}\n"+
-                        f"\n{data.vd_url}",
+                        f"点赞：{like}，投币：{coin}，收藏：{favorite}"+
+                        f"\n{vd_url}",
                     ]
                 ).send()
 
@@ -190,3 +203,9 @@ async def _(session: EventSession, message: UniMsg):
                 )
                 _tmp[data.image_url] = time.time()
                 await data.image_info.send()
+                
+def _add_junk(url: str) -> str:
+    pos = url.find("/BV")
+    if pos != -1:
+        url = url[:pos] + "/BV(隔断阻止小柒BOT再次解析)" + url[pos+3:]
+    return url
