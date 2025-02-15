@@ -61,7 +61,7 @@ async def send_image_to_group(new_entries):
                     logger.info(f"图片转发成功: {image_url}")
                 except Exception as e:
                     logger.error(f"发送图片时出错: {e}")
-                    await bot.send_group_msg(group_id=target_group_id, message=f"发送图片时出错: {e}\n图片URL:{image_url}")
+                    await bot.send_group_msg(group_id=target_group_id, message=f"发送图片时出错，这是图片的URL:{image_url}")
         else:
             logger.warning(f"No images found in the new RSS entry: {entry.title}")
 
