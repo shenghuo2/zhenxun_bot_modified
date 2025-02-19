@@ -16,6 +16,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.future import select
 from sqlalchemy.orm import sessionmaker
 from typing import Optional
+from nonebot.permission import SUPERUSER
 
 # 初始化 SQLAlchemy 部分
 DATABASE_PATH = Path(__file__).parent / "messages.db"
@@ -52,7 +53,7 @@ __plugin_meta__ = PluginMetadata(
     usage="自动记录消息的 sha256 和消息ID，存储到SQLite数据库中。若检测到重复消息，自动回复提示",
     extra={
         "author": "shenghuo2",
-        "version": "0.2",
+        "version": "0.9",
         "plugin_type": "DEPENDANT",
         "menu_type": "其他",
         "configs": [
@@ -92,6 +93,23 @@ async def find_existing_message(session: AsyncSession, sha256: str, group_id: st
         )
     )
     return result.scalars().first()
+
+# 通过 message_id 查询是否存在记录的函数
+async def find_message_by_id(session: AsyncSession, message_id: str) -> Optional[MessageRecord]:
+    result = await session.execute(
+        select(MessageRecord).filter_by(message_id=message_id)
+    )
+    return result.scalars().first()
+
+# 删除消息记录的异步函数
+async def delete_message(session: AsyncSession, message_id: str):
+        result = await session.execute(
+            select(MessageRecord).filter_by(message_id=message_id)
+        )
+        message_record = result.scalars().first()
+        if message_record:
+            await session.delete(message_record)
+            await session.commit()
 
 # 判断是否为纯文本消息
 def is_pure_text(message: MessageEvent):
@@ -369,7 +387,26 @@ async def handle_mark_image(event: MessageEvent, bot: Bot, session: Uninfo):
     else:
         await mark_image.finish(f"该命令需要回复一条消息,杂鱼{session.user.nickname}！")
 
+# 删除标记的命令
+delete_mark = on_command("#删除标记", priority=5, block=True, permission=SUPERUSER)
 
+@delete_mark.handle()
+async def handle_delete_mark(event: MessageEvent, bot: Bot, session: Uninfo):
+    # 判断是否为回复消息
+    if event.reply:
+        # 获取被回复消息的ID
+        replied_message_id = str(event.reply.message_id)
+        async with AsyncSessionLocal() as db_session:
+            # 查询数据库中是否已存在相同的消息
+            existing_message = await find_message_by_id(db_session, replied_message_id)
+            if existing_message:
+                # 删除数据库中的记录
+                await delete_message(db_session, existing_message.message_id)
+                await delete_mark.finish("消息标记已删除！")
+            else:
+                await delete_mark.finish("未找到该消息的标记记录。")
+    else:
+        await delete_mark.finish("该命令需要回复一条消息。")
 
 # 插件加载时初始化数据库
 async def on_start():
