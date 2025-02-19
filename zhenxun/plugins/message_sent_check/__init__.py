@@ -17,6 +17,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import sessionmaker
 from typing import Optional
 from nonebot.permission import SUPERUSER
+import asyncio
 
 # 初始化 SQLAlchemy 部分
 DATABASE_PATH = Path(__file__).parent / "messages.db"
@@ -53,7 +54,7 @@ __plugin_meta__ = PluginMetadata(
     usage="自动记录消息的 sha256 和消息ID，存储到SQLite数据库中。若检测到重复消息，自动回复提示",
     extra={
         "author": "shenghuo2",
-        "version": "0.9",
+        "version": "0.6.1",
         "plugin_type": "DEPENDANT",
         "menu_type": "其他",
         "configs": [
@@ -302,6 +303,7 @@ async def handle_message(event: MessageEvent, session: Uninfo, bot: Bot):
                 await store_message(db_session, message_id, sha256, group_id)
                 logger.info(f"Stored message {message_id} with sha256 {sha256} to database in group {group_id}.")
         return
+    # 图片
     if is_image_message(message):
         async with AsyncSessionLocal() as db_session:
             # 遍历所有图片段
@@ -328,6 +330,28 @@ async def handle_message(event: MessageEvent, session: Uninfo, bot: Bot):
                     MessageSegment.image(file=f"file:///{Path(__file__).parent}/saiboliequan.jpg")
                 )
                 await _matcher.finish(reply)
+            # if not existing and 
+            original_message = event.message
+            
+            concatenated_content = []
+            for segment in original_message:
+                if segment.data.get("summary"):
+                    return
+                if segment.type == "image":
+                    file_unique = segment.data.get("file_unique")
+                    file_size = segment.data.get("file_size")
+                    file_type = segment.data.get("file").split('.')[-1]
+                    
+                    if int(file_size) > 50_0000 and file_type != "gif":
+                        concatenated_content.append(file_unique)
+                    # return
+            if concatenated_content != []:
+                concatenated_content = "+".join(concatenated_content)
+                sha256 = compute_sha256(concatenated_content)
+                logger.info(f"拼接后的消息: {concatenated_content}", "message_sent_check",session=session)
+                await store_message(db_session, message_id, sha256, group_id)
+                logger.info(f"已自动记录 size >500000 图片(type:{file_type})消息 {message_id} with sha256 {sha256} in group {group_id}.","message_sent_check" ,session=session)
+                
         return
 
 # 新增的标记图片命令
@@ -380,7 +404,20 @@ async def handle_mark_image(event: MessageEvent, bot: Bot, session: Uninfo):
             else:
                 # 如果图片不在数据库中，手动存储
                 await store_message(db_session, replied_message_id, sha256, group_id, timestamp=int_to_datetime(event.reply.time))
-                await mark_image.finish("图片已手动存储！")
+                # await mark_image.send("图片已手动标记！")
+                result_message = await mark_image.send("图片已手动标记，五秒后撤回！")
+                if isinstance(result_message, dict):
+                    message_id = result_message.get('message_id')
+                else:
+                    message_id = result_message.message_id  # 如果是 Message 对象，直接访问属性
+
+                if message_id:
+                    await asyncio.sleep(5)
+                    await bot.delete_msg(message_id=message_id)
+                # await bot.delete_msg(message_id=result_message.message_id)
+                else:
+                    await mark_image.finish("cannot delete message")
+                await mark_image.finish()
             # else:
             #     await mark_image.finish("未能提取到图片的唯一标识符（file_unique）。")
             return
