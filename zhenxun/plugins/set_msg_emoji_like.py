@@ -70,7 +70,7 @@ async def process_harassment(bot: Bot, event: MessageEvent):
         await asyncio.sleep(random.uniform(0.2, 1))  # 随机延时
 
 # 设置骚扰命令的响应器
-set_msg_emoji_like = on_command("骚扰", aliases={"#骚扰"}, priority=5)
+set_msg_emoji_like = on_command("#骚扰", priority=5)
 
 @set_msg_emoji_like.handle()
 async def handle_harassment(bot: Bot, event: MessageEvent):
