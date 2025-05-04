@@ -19,6 +19,9 @@ from typing import Optional
 from nonebot.permission import SUPERUSER
 import asyncio
 
+from ..parse_bilibili.information_container import InformationContainer
+from ..parse_bilibili.parse_url import parse_bili_url
+
 # 初始化 SQLAlchemy 部分
 DATABASE_PATH = Path(__file__).parent / "messages.db"
 DATABASE_URL = f"sqlite+aiosqlite:///{DATABASE_PATH}"
@@ -50,11 +53,22 @@ async def init_db():
 # 插件元数据
 __plugin_meta__ = PluginMetadata(
     name="message_sent_check",
-    description="记录所有非纯文字的消息的sha256和消息id，检测重复消息并自动回复",
-    usage="自动记录消息的 sha256 和消息ID，存储到SQLite数据库中。若检测到重复消息，自动回复提示",
+    description="记录所有非纯文字的消息的sha256和消息id，检测重复消息并自动回复，支持B站视频查重",
+    usage="""
+    自动记录消息的 sha256 和消息ID，存储到SQLite数据库中。若检测到重复消息，自动回复提示。
+
+    功能：
+    1. 自动检测转发消息、视频消息的重复
+    2. 自动检测B站视频链接的重复（支持标准链接、短链接、BV号、AV号）
+    3. 支持手动标记图片和B站视频
+
+    命令：
+    - #标记：回复一条消息，将其标记为已发送过（支持图片和B站视频）
+    - #删除标记：回复一条消息，删除其标记记录（仅限超级用户）
+    """,
     extra={
         "author": "shenghuo2",
-        "version": "0.6.1",
+        "version": "0.7.0",
         "plugin_type": "DEPENDANT",
         "menu_type": "其他",
         "configs": [
@@ -120,14 +134,14 @@ def is_pure_text(message: MessageEvent):
 async def _rule(session: Uninfo) -> bool:
     # 从配置中获取群号白名单
     group_whitelist = Config.get_config("message_sent_check", "GROUP_WHITELIST")
-    
+
     if group_whitelist and session.group.id not in group_whitelist:
         return False  # 如果群不在白名单中，忽略该消息
     return True  # 如果群在白名单中，处理消息
 
 def is_valid_message(message_content: str) -> bool:
     """
-    判断消息是否为需要处理的图片、视频或转发消息， 
+    判断消息是否为需要处理的图片、视频或转发消息，
     同时忽略包含表情包的消息。
     """
     # 检查消息是否是图片、视频或转发消息
@@ -160,7 +174,7 @@ async def get_forward_messages(forward_message_id: str, bot: Bot) -> list:
         # 获取转发消息
         response: dict = await bot.call_api("get_forward_msg", message_id=forward_message_id)
         messages = response.get("messages", [])
-        
+
         forward_messages = []
         for msg in messages:
             # 检查消息是否包含嵌套转发
@@ -215,16 +229,58 @@ def is_image_message(message: Message) -> bool:
     """判断消息是否包含图片"""
     return any(seg.type == "image" for seg in message)
 
+def contains_bilibili_url(message_text: str) -> bool:
+    """判断消息是否包含B站视频链接"""
+    # 检查常见的B站链接格式
+    bilibili_patterns = [
+        r"https?://(?:www\.)?bilibili\.com/video/[A-Za-z0-9]+",  # 标准视频链接
+        r"https?://b23\.tv/[A-Za-z0-9]+",                        # 短链接
+        r"BV[A-Za-z0-9]{10}",                                    # BV号
+        r"av\d+",                                                # av号
+    ]
+
+    for pattern in bilibili_patterns:
+        if re.search(pattern, message_text, re.IGNORECASE):
+            return True
+    return False
+
+def extract_bilibili_url(message_text: str) -> str:
+    """从消息文本中提取B站视频链接"""
+    # 尝试匹配不同格式的B站链接
+    # 标准视频链接
+    match = re.search(r"https?://(?:www\.)?bilibili\.com/video/[A-Za-z0-9]+", message_text)
+    if match:
+        return match.group(0)
+
+    # 短链接
+    match = re.search(r"https?://b23\.tv/[A-Za-z0-9]+", message_text)
+    if match:
+        return match.group(0)
+
+    # BV号
+    match = re.search(r"BV[A-Za-z0-9]{10}", message_text)
+    if match:
+        bv_id = match.group(0)
+        return f"https://www.bilibili.com/video/{bv_id}"
+
+    # av号
+    match = re.search(r"av(\d+)", message_text)
+    if match:
+        av_id = match.group(1)
+        return f"https://www.bilibili.com/video/av{av_id}"
+
+    return None
+
 def int_to_datetime(timestamp: int) -> datetime.datetime:
     # 创建 UTC+8 时区的对象
     utc_plus_8 = datetime.timezone(datetime.timedelta(hours=8))
-    
+
     # 将时间戳转换为 UTC+8 时区的 datetime 对象
     dt_utc_plus_8 = datetime.datetime.fromtimestamp(timestamp, tz=utc_plus_8)
-    
+
     # 将 UTC+8 转换为 UTC 时区
     dt_utc = dt_utc_plus_8.astimezone(datetime.timezone.utc)
-    
+
     return dt_utc
 
 _matcher = on_message(priority=1, block=False, rule=_rule)
@@ -251,11 +307,12 @@ async def handle_message(event: MessageEvent, session: Uninfo, bot: Bot):
             existing_message = await find_existing_message(db_session, sha256, group_id)
             if existing_message:
                 time_diff_str = get_time_diff_str(existing_message.timestamp)
-                
+
                 # 如果找到相同的消息，构造CQ码进行回复
                 reply_message = Message(
-                    MessageSegment.reply(existing_message.message_id) + 
-                    MessageSegment.text(f"在{time_diff_str}就有人发过了喵") + 
+                    MessageSegment.reply(existing_message.message_id) +
+                    MessageSegment.at(event.user_id) +
+                    MessageSegment.text(f"在{time_diff_str}就有人发过了喵") +
                     MessageSegment.image(file=f"file:///{Path(__file__).parent}/saiboliequan.jpg")
                 )
                 try:
@@ -270,8 +327,55 @@ async def handle_message(event: MessageEvent, session: Uninfo, bot: Bot):
                 await store_message(db_session, message_id, sha256, group_id)
                 logger.info(f"Stored forward message {message_id} with sha256 {sha256} to database in group {group_id}.")
         return
-    # else:
-        # 如果不是转发消息，继续执行原有逻辑
+
+    # 检查是否包含B站视频链接
+    if contains_bilibili_url(message_content):
+        # 提取B站视频链接
+        bili_url = extract_bilibili_url(message_content)
+        if bili_url:
+            # 使用parse_bilibili插件解析视频信息
+            information_container = InformationContainer()
+            try:
+                # 解析B站视频链接
+                await parse_bili_url(bili_url, information_container)
+
+                # 如果成功获取到视频信息
+                if information_container.vd_info:
+                    # 使用视频的BV号或AV号作为唯一标识
+                    video_id = information_container.vd_info.get("bvid") or f"av{information_container.vd_info.get('aid')}"
+                    # 计算视频信息的sha256
+                    video_sha256 = compute_sha256(f"bilibili_video_{video_id}")
+
+                    async with AsyncSessionLocal() as db_session:
+                        # 检查数据库中是否已有相同视频
+                        existing_message = await find_existing_message(db_session, video_sha256, group_id)
+                        if existing_message:
+                            # 如果找到相同的视频，构造回复消息
+                            time_diff_str = get_time_diff_str(existing_message.timestamp)
+                            video_title = information_container.vd_info.get("title", "未知视频")
+
+                            reply_message = Message(
+                                MessageSegment.reply(existing_message.message_id) +
+                                MessageSegment.at(event.user_id) +
+                                MessageSegment.text(f"视频《{video_title}》在{time_diff_str}就有人发过了喵") +
+                                MessageSegment.image(file=f"file:///{Path(__file__).parent}/saiboliequan.jpg")
+                            )
+                            try:
+                                await _matcher.finish(reply_message)
+                            except FinishedException:
+                                pass
+                            except Exception as e:
+                                logger.error(f"Error while sending reply: {e}")
+                            logger.info(f"Repeated video detected: {message_id} with video_id {video_id} in group {group_id}")
+                        else:
+                            # 否则存储该视频信息
+                            await store_message(db_session, message_id, video_sha256, group_id)
+                            logger.info(f"Stored video {message_id} with video_id {video_id} to database in group {group_id}.")
+                    return
+            except Exception as e:
+                logger.error(f"Error parsing Bilibili URL: {e}")
+
+    # 如果不是B站视频链接，继续执行原有逻辑
     if is_valid_message(message):
         if file_unique := extract_file_unique(message_content):
             sha256 = file_unique
@@ -284,13 +388,13 @@ async def handle_message(event: MessageEvent, session: Uninfo, bot: Bot):
             if existing_message:
                 # 如果找到相同的消息，构造CQ码进行回复
                 time_diff_str = get_time_diff_str(existing_message.timestamp)
-                
+
                 # 如果找到相同的消息，构造CQ码进行回复
                 reply_message = Message(
-                    MessageSegment.reply(existing_message.message_id) + 
-                    MessageSegment.text(f"在{time_diff_str}就有人发过了喵") + 
+                    MessageSegment.reply(existing_message.message_id) +
+                    MessageSegment.text(f"在{time_diff_str}就有人发过了喵") +
                     MessageSegment.image(file=f"file:///{Path(__file__).parent}/saiboliequan.jpg")
-                )                    
+                )
                 try:
                     await _matcher.finish(Message(reply_message))
                 except FinishedException:
@@ -304,55 +408,61 @@ async def handle_message(event: MessageEvent, session: Uninfo, bot: Bot):
                 logger.info(f"Stored message {message_id} with sha256 {sha256} to database in group {group_id}.")
         return
     # 图片
-    if is_image_message(message):
-        async with AsyncSessionLocal() as db_session:
-            # 遍历所有图片段
-            # event.reply.time
-            concatenated_content = []
-            for segment in message:
-                # if seg.type == "image" and (file_unique := seg.data.get("file_unique")):
-                if segment.type == "image":
-                    file_unique = segment.data.get("file_unique")
-                    concatenated_content.append(file_unique)
-                # file_unique = seg.data.get("file_unique")
-                    # 仅检测不存储
-                    # if 
-            concatenated_content = "+".join(concatenated_content)
-            sha256 = compute_sha256(concatenated_content)
-            logger.info(f"拼接后的消息: {concatenated_content}", "message_sent_check",session=session)
-            existing = await find_existing_message(db_session, sha256, group_id)
-            if existing:
-                time_diff_str = get_time_diff_str(existing.timestamp)
-                reply = Message(
-                    MessageSegment.reply(int(existing.message_id)) +
-                    # Message("[CQ:reply,id=" + existing.message_id + "]") +
-                    MessageSegment.text(f"在{time_diff_str}就有人发过了喵") +
-                    MessageSegment.image(file=f"file:///{Path(__file__).parent}/saiboliequan.jpg")
-                )
-                await _matcher.finish(reply)
-            # if not existing and 
-            original_message = event.message
-            
-            concatenated_content = []
-            for segment in original_message:
-                if segment.data.get("summary"):
-                    return
-                if segment.type == "image":
-                    file_unique = segment.data.get("file_unique")
-                    file_size = segment.data.get("file_size")
-                    file_type = segment.data.get("file").split('.')[-1]
-                    
-                    if int(file_size) > 50_0000 and file_type != "gif":
-                        concatenated_content.append(file_unique)
-                    # return
-            if concatenated_content != []:
-                concatenated_content = "+".join(concatenated_content)
-                sha256 = compute_sha256(concatenated_content)
-                logger.info(f"拼接后的消息: {concatenated_content}", "message_sent_check",session=session)
-                await store_message(db_session, message_id, sha256, group_id)
-                logger.info(f"已自动记录 size >500000 图片(type:{file_type})消息 {message_id} with sha256 {sha256} in group {group_id}.","message_sent_check" ,session=session)
-                
-        return
+    # if is_image_message(message):
+    #     if session.group:
+    #         if session.group.id == "696707598":
+    #             _matcher.finish()
+    #             return
+    #     async with AsyncSessionLocal() as db_session:
+    #         # 遍历所有图片段
+
+    #         # event.reply.time
+    #         concatenated_content = []
+    #         for segment in message:
+    #             # if seg.type == "image" and (file_unique := seg.data.get("file_unique")):
+    #             if segment.type == "image":
+    #                 file_unique = segment.data.get("file_unique")
+    #                 concatenated_content.append(file_unique)
+    #             # file_unique = seg.data.get("file_unique")
+    #                 # 仅检测不存储
+    #                 # if
+    #         concatenated_content = "+".join(concatenated_content)
+    #         sha256 = compute_sha256(concatenated_content)
+    #         logger.info(f"拼接后的消息: {concatenated_content}", "message_sent_check",session=session)
+    #         existing = await find_existing_message(db_session, sha256, group_id)
+    #         if existing:
+    #             time_diff_str = get_time_diff_str(existing.timestamp)
+    #             reply = Message(
+    #                 MessageSegment.reply(int(existing.message_id)) +
+    #                 # Message("[CQ:reply,id=" + existing.message_id + "]") +
+    #                 MessageSegment.text(f"在{time_diff_str}就有人发过了喵") +
+    #                 MessageSegment.image(file=f"file:///{Path(__file__).parent}/saiboliequan.jpg")
+    #             )
+    #             await _matcher.finish(reply)
+    #         # if not existing and
+    #         original_message = event.message
+
+    #         concatenated_content = []
+    #         for segment in original_message:
+    #             if segment.data.get("summary"):
+    #                 _matcher.finish()
+    #             if segment.type == "image":
+    #                 file_unique = segment.data.get("file_unique")
+    #                 file_size = segment.data.get("file_size")
+    #                 file_type = segment.data.get("file").split('.')[-1]
+
+    #                 if int(file_size) > 50_0000 and file_type != "gif":
+    #                     concatenated_content.append(file_unique)
+    #                 # return
+    #         if concatenated_content != []:
+
+    #             concatenated_content = "+".join(concatenated_content)
+    #             sha256 = compute_sha256(concatenated_content)
+    #             logger.info(f"拼接后的消息: {concatenated_content}", "message_sent_check",session=session)
+    #             await store_message(db_session, message_id, sha256, group_id)
+    #             logger.info(f"已自动记录 size >500000 图片(type:{file_type})消息 {message_id} with sha256 {sha256} in group {group_id}.","message_sent_check" ,session=session)
+
+    #     return
 
 # 新增的标记图片命令
 mark_image = on_command("#标记", priority=5, block=True)
@@ -368,6 +478,58 @@ async def handle_mark_image(event: MessageEvent, bot: Bot, session: Uninfo):
         replied_message_id = str(event.reply.message_id)
         # 获取被回复消息的内容
         original_message: Message = event.reply.message
+        original_message_content = event.reply.raw_message
+
+        # 检查是否包含B站视频链接
+        if contains_bilibili_url(original_message_content):
+            # 提取B站视频链接
+            bili_url = extract_bilibili_url(original_message_content)
+            if bili_url:
+                # 使用parse_bilibili插件解析视频信息
+                information_container = InformationContainer()
+                try:
+                    # 解析B站视频链接
+                    await parse_bili_url(bili_url, information_container)
+
+                    # 如果成功获取到视频信息
+                    if information_container.vd_info:
+                        # 使用视频的BV号或AV号作为唯一标识
+                        video_id = information_container.vd_info.get("bvid") or f"av{information_container.vd_info.get('aid')}"
+                        video_title = information_container.vd_info.get("title", "未知视频")
+                        # 计算视频信息的sha256
+                        video_sha256 = compute_sha256(f"bilibili_video_{video_id}")
+
+                        async with AsyncSessionLocal() as db_session:
+                            # 查询数据库中是否已存在相同的视频
+                            existing_message = await find_existing_message(db_session, video_sha256, group_id)
+                            if existing_message:
+                                # 如果找到相同的视频，构造回复消息
+                                time_diff_str = get_time_diff_str(existing_message.timestamp)
+                                reply_message = Message(
+                                    MessageSegment.reply(existing_message.message_id) +
+                                    MessageSegment.text(f"视频《{video_title}》在{time_diff_str}就有人标记过了，还标记，杂鱼~") +
+                                    MessageSegment.image(file=f"file:///{Path(__file__).parent}/saiboliequan.jpg")
+                                )
+                                await mark_image.finish(reply_message)
+                            else:
+                                # 如果视频不在数据库中，手动存储
+                                await store_message(db_session, replied_message_id, video_sha256, group_id, timestamp=int_to_datetime(event.reply.time))
+                                result_message = await mark_image.send(f"视频《{video_title}》标记成功，五秒后撤回本消息~")
+                                if isinstance(result_message, dict):
+                                    message_id = result_message.get('message_id')
+                                else:
+                                    message_id = result_message.message_id  # 如果是 Message 对象，直接访问属性
+
+                                if message_id:
+                                    await asyncio.sleep(5)
+                                    await bot.delete_msg(message_id=message_id)
+                                else:
+                                    await mark_image.finish("cannot delete message")
+                                await mark_image.finish()
+                        return
+                except Exception as e:
+                    logger.error(f"Error parsing Bilibili URL: {e}")
+
         # 处理被回复的消息中的图片
         for segment in original_message:
             if segment.type == "image":
@@ -386,7 +548,7 @@ async def handle_mark_image(event: MessageEvent, bot: Bot, session: Uninfo):
         concatenated_content = "+".join(concatenated_content)
         # 如果没有图片，返回提示
         if concatenated_content == '':
-            await mark_image.finish("没有检测到图片消息，杂鱼♥")
+            await mark_image.finish("没有检测到图片或视频消息，杂鱼♥")
         sha256 = compute_sha256(concatenated_content)
         logger.info(f"拼接后的消息: {concatenated_content}", "message_sent_check",session=session)
         async with AsyncSessionLocal() as db_session:
@@ -396,8 +558,8 @@ async def handle_mark_image(event: MessageEvent, bot: Bot, session: Uninfo):
                 # 如果找到相同的图片，构造回复消息
                 time_diff_str = get_time_diff_str(existing_message.timestamp)
                 reply_message = Message(
-                    MessageSegment.reply(existing_message.message_id) + 
-                    MessageSegment.text(f"该图片在{time_diff_str}就有人标记过了，还标记，杂鱼~") + 
+                    MessageSegment.reply(existing_message.message_id) +
+                    MessageSegment.text(f"该图片在{time_diff_str}就有人标记过了，还标记，杂鱼~") +
                     MessageSegment.image(file=f"file:///{Path(__file__).parent}/saiboliequan.jpg")
                 )
                 await mark_image.finish(reply_message)
@@ -405,7 +567,7 @@ async def handle_mark_image(event: MessageEvent, bot: Bot, session: Uninfo):
                 # 如果图片不在数据库中，手动存储
                 await store_message(db_session, replied_message_id, sha256, group_id, timestamp=int_to_datetime(event.reply.time))
                 # await mark_image.send("图片已手动标记！")
-                result_message = await mark_image.send("图片已手动标记，五秒后撤回！")
+                result_message = await mark_image.send("标记成功，五秒后撤回本消息~")
                 if isinstance(result_message, dict):
                     message_id = result_message.get('message_id')
                 else:
@@ -428,7 +590,7 @@ async def handle_mark_image(event: MessageEvent, bot: Bot, session: Uninfo):
 delete_mark = on_command("#删除标记", priority=5, block=True, permission=SUPERUSER)
 
 @delete_mark.handle()
-async def handle_delete_mark(event: MessageEvent, bot: Bot, session: Uninfo):
+async def handle_delete_mark(event: MessageEvent, bot: Bot):
     # 判断是否为回复消息
     if event.reply:
         # 获取被回复消息的ID
@@ -439,7 +601,15 @@ async def handle_delete_mark(event: MessageEvent, bot: Bot, session: Uninfo):
             if existing_message:
                 # 删除数据库中的记录
                 await delete_message(db_session, existing_message.message_id)
-                await delete_mark.finish("消息标记已删除！")
+                result_message = await delete_mark.send("消息标记已删除！")
+                if isinstance(result_message, dict):
+                    message_id = result_message.get('message_id')
+                else:
+                    message_id = result_message.message_id  # 如果是 Message 对象，直接访问属性
+
+                if message_id:
+                    await asyncio.sleep(5)
+                    await bot.delete_msg(message_id=message_id)
             else:
                 await delete_mark.finish("未找到该消息的标记记录。")
     else:
