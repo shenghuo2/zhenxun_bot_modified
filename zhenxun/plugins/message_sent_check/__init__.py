@@ -1,5 +1,6 @@
 import hashlib
 import re
+import json
 from nonebot import on_message, on_command
 from nonebot.plugin import PluginMetadata
 from nonebot_plugin_uninfo import Uninfo
@@ -15,9 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.future import select
 from sqlalchemy.orm import sessionmaker
-from typing import Optional
+from typing import Optional, Dict, Any, Union
 from nonebot.permission import SUPERUSER
 import asyncio
+import aiohttp
+from zhenxun.utils.user_agent import get_user_agent
 
 from ..parse_bilibili.information_container import InformationContainer
 from ..parse_bilibili.parse_url import parse_bili_url
@@ -60,7 +63,8 @@ __plugin_meta__ = PluginMetadata(
     功能：
     1. 自动检测转发消息、视频消息的重复
     2. 自动检测B站视频链接的重复（支持标准链接、短链接、BV号、AV号）
-    3. 支持手动标记图片和B站视频
+    3. 自动检测B站视频卡片分享的重复
+    4. 支持手动标记图片和B站视频（包括视频卡片）
 
     命令：
     - #标记：回复一条消息，将其标记为已发送过（支持图片和B站视频）
@@ -68,7 +72,7 @@ __plugin_meta__ = PluginMetadata(
     """,
     extra={
         "author": "shenghuo2",
-        "version": "0.7.0",
+        "version": "0.7.1",
         "plugin_type": "DEPENDANT",
         "menu_type": "其他",
         "configs": [
@@ -237,12 +241,52 @@ def contains_bilibili_url(message_text: str) -> bool:
         r"https?://b23\.tv/[A-Za-z0-9]+",                        # 短链接
         r"BV[A-Za-z0-9]{10}",                                    # BV号
         r"av\d+",                                                # av号
+        r"bilibili\.com",                                        # 包含bilibili.com的任何链接
+        r"b23\.tv",                                              # 包含b23.tv的任何链接
     ]
 
     for pattern in bilibili_patterns:
         if re.search(pattern, message_text, re.IGNORECASE):
             return True
     return False
+
+def extract_url_from_json(json_data: dict) -> Optional[str]:
+    """从JSON数据中提取URL"""
+    # 递归搜索JSON中的URL
+    def search_url(data, depth=0, max_depth=5):
+        if depth > max_depth:
+            return None
+
+        if isinstance(data, dict):
+            # 检查常见的URL字段名
+            url_keys = ["url", "jumpUrl", "qqdocurl", "link", "href"]
+            for key in url_keys:
+                if key in data and isinstance(data[key], str) and ("bilibili.com" in data[key] or "b23.tv" in data[key]):
+                    return data[key]
+
+            # 递归搜索所有值
+            for value in data.values():
+                result = search_url(value, depth + 1, max_depth)
+                if result:
+                    return result
+
+        elif isinstance(data, list):
+            # 递归搜索列表中的所有元素
+            for item in data:
+                result = search_url(item, depth + 1, max_depth)
+                if result:
+                    return result
+
+        elif isinstance(data, str):
+            # 检查字符串是否包含B站链接
+            if "bilibili.com/video" in data or "b23.tv" in data:
+                url = extract_bilibili_url(data)
+                if url:
+                    return url
+
+        return None
+
+    return search_url(json_data)
 
 def extract_bilibili_url(message_text: str) -> str:
     """从消息文本中提取B站视频链接"""
@@ -268,6 +312,112 @@ def extract_bilibili_url(message_text: str) -> str:
     if match:
         av_id = match.group(1)
         return f"https://www.bilibili.com/video/av{av_id}"
+
+    return None
+
+async def extract_bilibili_card_info(message: Message) -> Optional[Dict[str, Any]]:
+    """从消息卡片中提取B站视频信息"""
+    for segment in message:
+        # 检查是否是JSON消息段
+        if segment.type == "json":
+            try:
+                # 解析JSON数据
+                data = json.loads(segment.data.get("data", "{}"))
+                logger.info(f"解析JSON数据: {data}")
+
+                # 检查是否是B站视频卡片 - 标准格式
+                if data.get("desc") == "哔哩哔哩" or "哔哩哔哩" in data.get("prompt", ""):
+                    # 获取视频链接
+                    if "meta" in data and "detail_1" in data["meta"] and "qqdocurl" in data["meta"]["detail_1"]:
+                        url = data["meta"]["detail_1"]["qqdocurl"]
+                        logger.info(f"找到B站视频链接: {url}")
+
+                        # 处理链接
+                        async with aiohttp.ClientSession(headers=get_user_agent()) as session:
+                            async with session.get(url, timeout=7) as response:
+                                real_url = str(response.url).split("?")[0]
+                                if real_url.endswith("/"):
+                                    real_url = real_url[:-1]
+
+                                logger.info(f"重定向后的链接: {real_url}")
+
+                                # 创建信息容器
+                                information_container = InformationContainer()
+                                await parse_bili_url(real_url, information_container)
+
+                                if information_container.vd_info:
+                                    return {
+                                        "video_id": information_container.vd_info.get("bvid") or f"av{information_container.vd_info.get('aid')}",
+                                        "title": information_container.vd_info.get("title", "未知视频"),
+                                        "url": real_url
+                                    }
+
+                # 检查是否是QQ小程序格式的B站视频卡片
+                if "小程序" in data.get("prompt", ""):
+                    logger.info("检测到QQ小程序格式")
+
+                    # 使用辅助函数从JSON中提取URL
+                    url = extract_url_from_json(data)
+
+                    if not url:
+                        # 尝试从JSON字符串中直接搜索URL
+                        json_str = json.dumps(data)
+                        url_match = re.search(r'(https?://(?:www\.)?bilibili\.com/video/[A-Za-z0-9]+|https?://b23\.tv/[A-Za-z0-9]+)', json_str)
+                        if url_match:
+                            url = url_match.group(0)
+
+                    if url:
+                        logger.info(f"从QQ小程序中找到B站链接: {url}")
+
+                        # 处理链接
+                        async with aiohttp.ClientSession(headers=get_user_agent()) as session:
+                            async with session.get(url, timeout=7) as response:
+                                real_url = str(response.url).split("?")[0]
+                                if real_url.endswith("/"):
+                                    real_url = real_url[:-1]
+
+                                logger.info(f"重定向后的链接: {real_url}")
+
+                                # 创建信息容器
+                                information_container = InformationContainer()
+                                await parse_bili_url(real_url, information_container)
+
+                                if information_container.vd_info:
+                                    return {
+                                        "video_id": information_container.vd_info.get("bvid") or f"av{information_container.vd_info.get('aid')}",
+                                        "title": information_container.vd_info.get("title", "未知视频"),
+                                        "url": real_url
+                                    }
+
+                # 尝试直接从JSON中搜索B站链接
+                json_str = json.dumps(data)
+                bili_url = extract_bilibili_url(json_str)
+                if bili_url:
+                    logger.info(f"从JSON字符串中提取到B站链接: {bili_url}")
+
+                    # 处理链接
+                    async with aiohttp.ClientSession(headers=get_user_agent()) as session:
+                        async with session.get(bili_url, timeout=7) as response:
+                            real_url = str(response.url).split("?")[0]
+                            if real_url.endswith("/"):
+                                real_url = real_url[:-1]
+
+                            logger.info(f"重定向后的链接: {real_url}")
+
+                            # 创建信息容器
+                            information_container = InformationContainer()
+                            await parse_bili_url(real_url, information_container)
+
+                            if information_container.vd_info:
+                                return {
+                                    "video_id": information_container.vd_info.get("bvid") or f"av{information_container.vd_info.get('aid')}",
+                                    "title": information_container.vd_info.get("title", "未知视频"),
+                                    "url": real_url
+                                }
+            except Exception as e:
+                logger.error(f"解析B站视频卡片失败: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
 
     return None
 
@@ -328,6 +478,41 @@ async def handle_message(event: MessageEvent, session: Uninfo, bot: Bot):
                 logger.info(f"Stored forward message {message_id} with sha256 {sha256} to database in group {group_id}.")
         return
 
+    # 检查是否是B站视频卡片
+    bili_card_info = await extract_bilibili_card_info(message)
+    if bili_card_info:
+        # 获取视频信息
+        video_id = bili_card_info["video_id"]
+        video_title = bili_card_info["title"]
+        # 直接使用视频ID作为唯一标识
+        video_sha256 = f"bilibili_video_{video_id}"
+
+        async with AsyncSessionLocal() as db_session:
+            # 检查数据库中是否已有相同视频
+            existing_message = await find_existing_message(db_session, video_sha256, group_id)
+            if existing_message:
+                # 如果找到相同的视频，构造回复消息
+                time_diff_str = get_time_diff_str(existing_message.timestamp)
+
+                reply_message = Message(
+                    MessageSegment.reply(existing_message.message_id) +
+                    MessageSegment.at(event.user_id) +
+                    MessageSegment.text(f"视频《{video_title}》在{time_diff_str}就有人发过了喵") +
+                    MessageSegment.image(file=f"file:///{Path(__file__).parent}/saiboliequan.jpg")
+                )
+                try:
+                    await _matcher.finish(reply_message)
+                except FinishedException:
+                    pass
+                except Exception as e:
+                    logger.error(f"Error while sending reply: {e}")
+                logger.info(f"Repeated video card detected: {message_id} with video_id {video_id} in group {group_id}")
+            else:
+                # 否则存储该视频信息
+                await store_message(db_session, message_id, video_sha256, group_id)
+                logger.info(f"Stored video card {message_id} with video_id {video_id} to database in group {group_id}.")
+        return
+
     # 检查是否包含B站视频链接
     if contains_bilibili_url(message_content):
         # 提取B站视频链接
@@ -343,8 +528,8 @@ async def handle_message(event: MessageEvent, session: Uninfo, bot: Bot):
                 if information_container.vd_info:
                     # 使用视频的BV号或AV号作为唯一标识
                     video_id = information_container.vd_info.get("bvid") or f"av{information_container.vd_info.get('aid')}"
-                    # 计算视频信息的sha256
-                    video_sha256 = compute_sha256(f"bilibili_video_{video_id}")
+                    # 直接使用视频ID作为唯一标识，不需要计算sha256
+                    video_sha256 = f"bilibili_video_{video_id}"
 
                     async with AsyncSessionLocal() as db_session:
                         # 检查数据库中是否已有相同视频
@@ -480,6 +665,44 @@ async def handle_mark_image(event: MessageEvent, bot: Bot, session: Uninfo):
         original_message: Message = event.reply.message
         original_message_content = event.reply.raw_message
 
+        # 检查是否是B站视频卡片
+        bili_card_info = await extract_bilibili_card_info(original_message)
+        if bili_card_info:
+            # 获取视频信息
+            video_id = bili_card_info["video_id"]
+            video_title = bili_card_info["title"]
+            # 直接使用视频ID作为唯一标识
+            video_sha256 = f"bilibili_video_{video_id}"
+
+            async with AsyncSessionLocal() as db_session:
+                # 查询数据库中是否已存在相同的视频
+                existing_message = await find_existing_message(db_session, video_sha256, group_id)
+                if existing_message:
+                    # 如果找到相同的视频，构造回复消息
+                    time_diff_str = get_time_diff_str(existing_message.timestamp)
+                    reply_message = Message(
+                        MessageSegment.reply(existing_message.message_id) +
+                        MessageSegment.text(f"视频《{video_title}》在{time_diff_str}就有人标记过了，还标记，杂鱼~") +
+                        MessageSegment.image(file=f"file:///{Path(__file__).parent}/saiboliequan.jpg")
+                    )
+                    await mark_image.finish(reply_message)
+                else:
+                    # 如果视频不在数据库中，手动存储
+                    await store_message(db_session, replied_message_id, video_sha256, group_id, timestamp=int_to_datetime(event.reply.time))
+                    result_message = await mark_image.send(f"视频《{video_title}》标记成功，五秒后撤回本消息~")
+                    if isinstance(result_message, dict):
+                        message_id = result_message.get('message_id')
+                    else:
+                        message_id = result_message.message_id  # 如果是 Message 对象，直接访问属性
+
+                    if message_id:
+                        await asyncio.sleep(5)
+                        await bot.delete_msg(message_id=message_id)
+                    else:
+                        await mark_image.finish("cannot delete message")
+                    await mark_image.finish()
+            return
+
         # 检查是否包含B站视频链接
         if contains_bilibili_url(original_message_content):
             # 提取B站视频链接
@@ -496,8 +719,8 @@ async def handle_mark_image(event: MessageEvent, bot: Bot, session: Uninfo):
                         # 使用视频的BV号或AV号作为唯一标识
                         video_id = information_container.vd_info.get("bvid") or f"av{information_container.vd_info.get('aid')}"
                         video_title = information_container.vd_info.get("title", "未知视频")
-                        # 计算视频信息的sha256
-                        video_sha256 = compute_sha256(f"bilibili_video_{video_id}")
+                        # 直接使用视频ID作为唯一标识，不需要计算sha256
+                        video_sha256 = f"bilibili_video_{video_id}"
 
                         async with AsyncSessionLocal() as db_session:
                             # 查询数据库中是否已存在相同的视频
