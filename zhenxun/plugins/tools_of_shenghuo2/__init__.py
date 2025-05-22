@@ -69,7 +69,7 @@ async def handle_get_image(bot: Bot, session: EventSession, event: MessageEvent)
                 
                 if image_url:
                     # 发送原图
-                    await get_image_matcher.finish(Message(MessageSegment.image(image_url)))
+                    await get_image_matcher.finish(Message(MessageSegment.image(image_url)+MessageSegment.text(image_url)))
                     
                     logger.info(
                         f"表情包原图获取成功",
