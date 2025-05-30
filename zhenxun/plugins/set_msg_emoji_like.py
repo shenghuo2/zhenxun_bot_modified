@@ -58,6 +58,9 @@ async def process_harassment(bot: Bot, event: MessageEvent):
     if event.reply:
         replied_message = event.reply
         message_id = replied_message.message_id
+        if replied_message.sender.user_id == 1308357113:
+            message_id = event.message_id
+            # await set_msg_emoji_like.finish()
     else:
         message_id = event.message_id
 
