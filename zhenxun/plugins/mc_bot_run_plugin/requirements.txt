@@ -1,0 +1,2 @@
+# MC Bot运行插件依赖
+paramiko>=2.7.0
