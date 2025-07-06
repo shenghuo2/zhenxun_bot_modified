@@ -252,14 +252,43 @@ async def handle_mc_run(session: EventSession, mcid: str, command: list[str]):
                 existing_files = sftp.listdir(remote_dir)
                 txt_files = [f for f in existing_files if f.endswith(".txt")]
 
-                # 进行大小写不敏感的匹配
+                # 进行大小写不敏感的精确匹配
                 target_filename = f"{mcid}.txt"
                 matched_filename = None
 
+                # 首先尝试精确匹配（大小写不敏感）
                 for existing_file in txt_files:
                     if existing_file.lower() == target_filename.lower():
                         matched_filename = existing_file
                         break
+
+                # 如果精确匹配失败，尝试模糊匹配
+                if not matched_filename:
+                    mcid_lower = mcid.lower()
+                    fuzzy_matches = []
+                    for existing_file in txt_files:
+                        file_base = existing_file.replace(".txt", "").lower()
+                        if mcid_lower in file_base or file_base in mcid_lower:
+                            fuzzy_matches.append(existing_file)
+
+                    # 检查模糊匹配结果
+                    if len(fuzzy_matches) == 1:
+                        matched_filename = fuzzy_matches[0]
+                    elif len(fuzzy_matches) > 1:
+                        # 多重匹配，提示错误并拒绝
+                        match_list = "\n".join(
+                            [f"• {f.replace('.txt', '')}" for f in fuzzy_matches]
+                        )
+                        error_msg = (
+                            f"❌ 用户名 '{mcid}' 匹配到多个文件，请使用更精确的名称：\n"
+                            f"{match_list}\n"
+                        )
+                        await MessageUtils.build_message(error_msg).send(reply_to=True)
+                        logger.warning(
+                            f"用户名模糊匹配冲突: '{mcid}' -> {fuzzy_matches}",
+                            "MC BotRun插件",
+                        )
+                        return
 
                 # 使用匹配到的文件名或原始文件名
                 final_filename = (
@@ -267,14 +296,24 @@ async def handle_mc_run(session: EventSession, mcid: str, command: list[str]):
                 )
                 remote_path = f"{remote_dir}/{final_filename}"
 
-                # 如果找到了匹配的文件但大小写不同，记录日志并标记需要提示用户
+                # 记录匹配信息并标记需要提示用户
                 case_mismatch_info = None
                 if matched_filename and matched_filename != target_filename:
-                    case_mismatch_info = f"输入 '{mcid}' -> 实际 '{matched_filename.replace('.txt', '')}'"
-                    logger.info(
-                        f"文件名大小写匹配: 输入 '{target_filename}' -> 实际 '{matched_filename}'",
-                        "MC BotRun 插件",
-                    )
+                    # 检查是精确匹配还是模糊匹配
+                    if matched_filename.lower() == target_filename.lower():
+                        # 精确匹配但大小写不同
+                        case_mismatch_info = f"输入 '{mcid}' -> 实际 '{matched_filename.replace('.txt', '')}' (大小写匹配)"
+                        logger.info(
+                            f"文件名大小写匹配: 输入 '{target_filename}' -> 实际 '{matched_filename}'",
+                            "MC Bot运行插件",
+                        )
+                    else:
+                        # 模糊匹配
+                        case_mismatch_info = f"输入 '{mcid}' -> 实际 '{matched_filename.replace('.txt', '')}' (模糊匹配)"
+                        logger.info(
+                            f"文件名模糊匹配: 输入 '{mcid}' -> 实际 '{matched_filename}'",
+                            "MC Bot运行插件",
+                        )
 
             except Exception as list_error:
                 # 如果无法列出目录，使用原始文件名
@@ -290,15 +329,15 @@ async def handle_mc_run(session: EventSession, mcid: str, command: list[str]):
             # 构建成功消息
             success_message = f"✅ MC命令发送成功！\n📋 MCID: {mcid}\n💬 命令: {command_str}\n🌐 已发送到: {SSH_HOST}"
 
-            # 如果发生了大小写匹配，添加提示信息
+            # 如果发生了匹配，添加提示信息
             if case_mismatch_info:
-                success_message += f"\n\n💡 用户名大小写已更正: {case_mismatch_info}"
+                success_message += f"\n\n💡 用户名匹配: {case_mismatch_info}"
 
             await MessageUtils.build_message(success_message).send(reply_to=True)
 
             logger.info(
-                f"用户 {user_id} 成功发送MC bot 控制命令: {mcid} {command_str}",
-                "MC BotRun 插件",
+                f"用户 {user_id} 成功发送MC命令: {mcid} {command_str}",
+                "MC Bot运行插件",
             )
 
         finally:
