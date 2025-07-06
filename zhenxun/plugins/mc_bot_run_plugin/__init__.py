@@ -14,38 +14,34 @@ import paramiko
 
 from zhenxun.services.log import logger
 from zhenxun.utils.message import MessageUtils
+from .config import SSH_HOST, SSH_USER, SSH_KEY_PATH
 
 __plugin_meta__ = PluginMetadata(
     name="MC Bot运行插件",
     description="通过SSH发送MC命令到远程服务器",
-    usage="""
-    usage：
+    usage="""    usage：
         通过SSH发送MC命令到远程服务器
         
         用户命令：
             #mcrun <mcid> <command>
+            #mcrun status - 查看所有服务器状态
         支持的命令：
             spawn - 生成/重生命令
             kill - 停止命令
         示例：
             #mcrun player123 spawn
             #mcrun admin kill
+            #mcrun status
         
         管理员命令（仅超级用户）：
             #mcrun_whitelist list - 查看白名单
             #mcrun_whitelist add <用户ID> - 添加用户到白名单
             #mcrun_whitelist remove <用户ID> - 从白名单移除用户
         
-        注意：只有白名单中的用户才能使用 #mcrun 命令，且仅支持 spawn 和 kill 命令
+        注意：只有白名单中的用户才能使用 #mcrun 命令，支持 spawn 和 kill 命令
     """.strip(),  # noqa: W293
     extra={"author": "shenghuo2", "version": "0.1.1", "configs": []},
 )
-
-# SSH配置
-SSH_HOST = "host"
-SSH_USER = "username"
-# 如果使用密钥认证，设置密钥路径
-SSH_KEY_PATH = Path(__file__).parent / "id_rsa"
 
 # 白名单文件路径
 WHITELIST_FILE = Path(__file__).parent / "whitelist.json"
@@ -89,6 +85,103 @@ mc_run_matcher = on_alconna(
     block=True,
 )
 
+# MC Bot状态查询命令
+mc_status_matcher = on_alconna(
+    Alconna("#mcrun", Args["status_cmd", str]),
+    priority=4,  # 更高优先级
+    block=True,
+)
+
+
+@mc_status_matcher.handle()
+async def handle_mc_status(session: EventSession, status_cmd: str):
+    """处理MC状态查询命令"""
+    try:
+        # 获取用户信息
+        user_id = session.id1 or "unknown"
+
+        # 检查用户是否在白名单中
+        if not is_user_in_whitelist(user_id):
+            await MessageUtils.build_message(
+                "❌ 权限不足！\n您不在白名单中，无法使用此命令。\n请联系管理员添加您到白名单。"
+            ).send(reply_to=True)
+            return
+
+        # 验证是否为status命令
+        if status_cmd.lower() != "status":
+            return  # 不是status命令，让其他匹配器处理
+
+        # 建立SSH连接
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        # 连接到SSH服务器
+        if SSH_KEY_PATH and SSH_KEY_PATH.exists():
+            ssh.connect(
+                SSH_HOST,
+                username=SSH_USER,
+                key_filename=str(SSH_KEY_PATH),
+                timeout=30,
+            )
+        else:
+            ssh.connect(SSH_HOST, username=SSH_USER, timeout=30)
+
+        # 使用SFTP读取远程目录中的所有.txt文件
+        sftp = ssh.open_sftp()
+        remote_dir = f"/home/{SSH_USER}/mc_bot"
+
+        try:
+            # 列出目录中的所有文件
+            files = sftp.listdir(remote_dir)
+            txt_files = [f for f in files if f.endswith(".txt")]
+
+            if not txt_files:
+                await MessageUtils.build_message("📊 当前没有服务器状态文件").send(
+                    reply_to=True
+                )
+                return
+
+            # 读取每个.txt文件的内容
+            status_info = "📊 状态总览\n\n"
+            for txt_file in sorted(txt_files):
+                bot_name = txt_file.replace(".txt", "")
+                try:
+                    remote_file_path = f"{remote_dir}/{txt_file}"
+                    with sftp.open(remote_file_path, "r") as f:
+                        content = f.read().decode("utf-8").strip()
+                        # 直接读取文件内容作为命令状态
+                        command = content.strip() if content else "unknown"
+                        status_emoji = (
+                            "🟢"
+                            if command == "spawn"
+                            else "🔴"
+                            if command == "kill"
+                            else "⚪"
+                        )
+                        status_info += f"{status_emoji} {bot_name}: {command}\n"
+                except Exception as e:
+                    status_info += f"❌ **{bot_name}**: 读取失败 ({str(e)})\n"
+
+            sftp.close()
+            ssh.close()
+
+            await MessageUtils.build_message(status_info).send(reply_to=True)
+            logger.info("服务器状态查询成功", "MC Bot运行插件")
+
+        except Exception as e:
+            sftp.close()
+            ssh.close()
+            await MessageUtils.build_message(f"❌ 读取服务器状态失败: {str(e)}").send(
+                reply_to=True
+            )
+
+    except Exception as e:
+        error_details = traceback.format_exc()
+        await MessageUtils.build_message(
+            f"❌ 状态查询失败！\n错误信息: {e!s}\n\n详细错误:\n{error_details}"
+        ).send(reply_to=True)
+        logger.error(f"状态查询异常: {e}\n详细错误: {error_details}", "MC Bot运行插件")
+
 
 @mc_run_matcher.handle()
 async def handle_mc_run(session: EventSession, mcid: str, command: list[str]):
@@ -123,7 +216,7 @@ async def handle_mc_run(session: EventSession, mcid: str, command: list[str]):
             ).send(reply_to=True)
             return
 
-        # 创建临时文件，指定临时目录避免权限问题
+        # 处理 spawn 和 kill 命令
         temp_dir = tempfile.gettempdir()
         tmp_file_path = os.path.join(temp_dir, f"mcbot_{mcid}_{int(time.time())}.txt")
 
