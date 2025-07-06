@@ -14,13 +14,14 @@ import paramiko
 
 from zhenxun.services.log import logger
 from zhenxun.utils.message import MessageUtils
-from .config import SSH_HOST, SSH_USER, SSH_KEY_PATH
+
+from .config import SSH_HOST, SSH_KEY_PATH, SSH_USER
 
 __plugin_meta__ = PluginMetadata(
-    name="MC Bot运行插件",
-    description="通过SSH发送MC命令到远程服务器",
+    name="MC BotRun 插件",
+    description="通过SSH发送MC bot控制命令到远程服务器",
     usage="""    usage：
-        通过SSH发送MC命令到远程服务器
+        通过SSH发送bot控制命令到远程服务器
         
         用户命令：
             #mcrun <mcid> <command>
@@ -40,7 +41,7 @@ __plugin_meta__ = PluginMetadata(
         
         注意：只有白名单中的用户才能使用 #mcrun 命令，支持 spawn 和 kill 命令
     """.strip(),  # noqa: W293
-    extra={"author": "shenghuo2", "version": "0.1.1", "configs": []},
+    extra={"author": "shenghuo2", "version": "0.1.2", "configs": []},
 )
 
 # 白名单文件路径
@@ -56,7 +57,7 @@ def load_whitelist() -> set[str]:
                 return set(data.get("users", []))
         return set()
     except Exception as e:
-        logger.error(f"加载白名单失败: {e}", "MC Bot运行插件")
+        logger.error(f"加载白名单失败: {e}", "MC BotRun 插件")
         return set()
 
 
@@ -68,7 +69,7 @@ def save_whitelist(whitelist: set[str]) -> bool:
             json.dump(data, f, ensure_ascii=False, indent=2)
         return True
     except Exception as e:
-        logger.error(f"保存白名单失败: {e}", "MC Bot运行插件")
+        logger.error(f"保存白名单失败: {e}", "MC BotRun 插件")
         return False
 
 
@@ -95,7 +96,7 @@ mc_status_matcher = on_alconna(
 
 @mc_status_matcher.handle()
 async def handle_mc_status(session: EventSession, status_cmd: str):
-    """处理MC状态查询命令"""
+    """处理MC Bot状态查询命令"""
     try:
         # 获取用户信息
         user_id = session.id1 or "unknown"
@@ -136,7 +137,7 @@ async def handle_mc_status(session: EventSession, status_cmd: str):
             txt_files = [f for f in files if f.endswith(".txt")]
 
             if not txt_files:
-                await MessageUtils.build_message("📊 当前没有服务器状态文件").send(
+                await MessageUtils.build_message("📊 当前没有bot状态文件").send(
                     reply_to=True
                 )
                 return
@@ -160,18 +161,18 @@ async def handle_mc_status(session: EventSession, status_cmd: str):
                         )
                         status_info += f"{status_emoji} {bot_name}: {command}\n"
                 except Exception as e:
-                    status_info += f"❌ **{bot_name}**: 读取失败 ({str(e)})\n"
+                    status_info += f"❌ {bot_name}: 读取失败 ({e!s})\n"
 
             sftp.close()
             ssh.close()
 
             await MessageUtils.build_message(status_info).send(reply_to=True)
-            logger.info("服务器状态查询成功", "MC Bot运行插件")
+            logger.info("服务器状态查询成功", "MC BotRun 插件")
 
         except Exception as e:
             sftp.close()
             ssh.close()
-            await MessageUtils.build_message(f"❌ 读取服务器状态失败: {str(e)}").send(
+            await MessageUtils.build_message(f"❌ 读取服务器状态失败: {e!s}").send(
                 reply_to=True
             )
 
@@ -180,7 +181,7 @@ async def handle_mc_status(session: EventSession, status_cmd: str):
         await MessageUtils.build_message(
             f"❌ 状态查询失败！\n错误信息: {e!s}\n\n详细错误:\n{error_details}"
         ).send(reply_to=True)
-        logger.error(f"状态查询异常: {e}\n详细错误: {error_details}", "MC Bot运行插件")
+        logger.error(f"状态查询异常: {e}\n详细错误: {error_details}", "MC BotRun 插件")
 
 
 @mc_run_matcher.handle()
@@ -232,7 +233,7 @@ async def handle_mc_run(session: EventSession, mcid: str, command: list[str]):
             )  # 自动接受主机密钥
 
             # 连接到SSH服务器
-            if SSH_KEY_PATH and os.path.exists(SSH_KEY_PATH):
+            if SSH_KEY_PATH and SSH_KEY_PATH.exists():
                 ssh.connect(
                     SSH_HOST,
                     username=SSH_USER,
@@ -242,20 +243,62 @@ async def handle_mc_run(session: EventSession, mcid: str, command: list[str]):
             else:
                 ssh.connect(SSH_HOST, username=SSH_USER, timeout=30)
 
-            # 使用SFTP上传文件
+            # 使用SFTP查询文件列表并进行大小写不敏感匹配
             sftp = ssh.open_sftp()
-            remote_path = f"/home/{SSH_USER}/mc_bot/{mcid}.txt"
+            remote_dir = f"/home/{SSH_USER}/mc_bot"
+
+            # 查询远程目录中的文件列表
+            try:
+                existing_files = sftp.listdir(remote_dir)
+                txt_files = [f for f in existing_files if f.endswith(".txt")]
+
+                # 进行大小写不敏感的匹配
+                target_filename = f"{mcid}.txt"
+                matched_filename = None
+
+                for existing_file in txt_files:
+                    if existing_file.lower() == target_filename.lower():
+                        matched_filename = existing_file
+                        break
+
+                # 使用匹配到的文件名或原始文件名
+                final_filename = (
+                    matched_filename if matched_filename else target_filename
+                )
+                remote_path = f"{remote_dir}/{final_filename}"
+
+                # 如果找到了匹配的文件但大小写不同，记录日志并标记需要提示用户
+                case_mismatch_info = None
+                if matched_filename and matched_filename != target_filename:
+                    case_mismatch_info = f"输入 '{mcid}' -> 实际 '{matched_filename.replace('.txt', '')}'"
+                    logger.info(
+                        f"文件名大小写匹配: 输入 '{target_filename}' -> 实际 '{matched_filename}'",
+                        "MC BotRun 插件",
+                    )
+
+            except Exception as list_error:
+                # 如果无法列出目录，使用原始文件名
+                logger.warning(f"无法列出远程目录文件: {list_error}", "MC BotRun 插件")
+                remote_path = f"{remote_dir}/{mcid}.txt"
+                case_mismatch_info = None
+
+            # 上传文件
             sftp.put(tmp_file_path, remote_path)
             sftp.close()
             ssh.close()
 
-            await MessageUtils.build_message(
-                f"✅ MC命令发送成功！\n📋 MCID: {mcid}\n💬 命令: {command_str}\n🌐 已发送到: {SSH_HOST}"
-            ).send(reply_to=True)
+            # 构建成功消息
+            success_message = f"✅ MC命令发送成功！\n📋 MCID: {mcid}\n💬 命令: {command_str}\n🌐 已发送到: {SSH_HOST}"
+
+            # 如果发生了大小写匹配，添加提示信息
+            if case_mismatch_info:
+                success_message += f"\n\n💡 用户名大小写已更正: {case_mismatch_info}"
+
+            await MessageUtils.build_message(success_message).send(reply_to=True)
 
             logger.info(
-                f"用户 {user_id} 成功发送MC命令: {mcid} {command_str}",
-                "MC Bot运行插件",
+                f"用户 {user_id} 成功发送MC bot 控制命令: {mcid} {command_str}",
+                "MC BotRun 插件",
             )
 
         finally:
@@ -263,7 +306,7 @@ async def handle_mc_run(session: EventSession, mcid: str, command: list[str]):
             try:
                 os.unlink(tmp_file_path)
             except Exception as cleanup_error:
-                logger.warning(f"清理临时文件失败: {cleanup_error}", "MC Bot运行插件")
+                logger.warning(f"清理临时文件失败: {cleanup_error}", "MC BotRun 插件")
 
     except Exception as e:
         error_details = traceback.format_exc()
@@ -271,7 +314,7 @@ async def handle_mc_run(session: EventSession, mcid: str, command: list[str]):
             f"❌ 执行失败！\n错误信息: {e!s}\n\n详细错误:\n{error_details}"
         ).send(reply_to=True)
         logger.error(
-            f"MC命令执行异常: {e}\n详细错误: {error_details}", "MC Bot运行插件"
+            f"MC命令执行异常: {e}\n详细错误: {error_details}", "MC BotRu n运行插件"
         )
 
 
@@ -324,7 +367,7 @@ async def handle_whitelist(
                 await MessageUtils.build_message(
                     f"✅ 已将用户 {user_id} 添加到白名单"
                 ).send(reply_to=True)
-                logger.info(f"用户 {user_id} 已添加到白名单", "MC Bot运行插件")
+                logger.info(f"用户 {user_id} 已添加到白名单", "MC BotRun 插件")
             else:
                 await MessageUtils.build_message("❌ 保存白名单失败").send(
                     reply_to=True
@@ -350,7 +393,7 @@ async def handle_whitelist(
                 await MessageUtils.build_message(
                     f"✅ 已将用户 {user_id} 从白名单移除"
                 ).send(reply_to=True)
-                logger.info(f"用户 {user_id} 已从白名单移除", "MC Bot运行插件")
+                logger.info(f"用户 {user_id} 已从白名单移除", "MC BotRun 插件")
             else:
                 await MessageUtils.build_message("❌ 保存白名单失败").send(
                     reply_to=True
@@ -373,5 +416,5 @@ async def handle_whitelist(
             f"❌ 白名单操作失败！\n错误信息: {e!s}\n\n详细错误:\n{error_details}"
         ).send(reply_to=True)
         logger.error(
-            f"白名单操作异常: {e}\n详细错误: {error_details}", "MC Bot运行插件"
+            f"白名单操作异常: {e}\n详细错误: {error_details}", "MC BotRun 插件"
         )
