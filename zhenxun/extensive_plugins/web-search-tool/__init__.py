@@ -31,18 +31,18 @@ from .config import ARK_API_KEY, KIMI_API_KEY
 
 __plugin_meta__ = PluginMetadata(
     name="Web 搜索工具集成",
-    description="提供 Kimi 与 Doubao 两个命令，联网搜索并输出总 token 数",
-    usage=(
-        "kimi搜索 [问题]\n"
-        "doubao搜索 [问题]"
-    ),
+    description="提供 #高级搜索 与 #搜索 两个命令，联网搜索并输出总 token 数",
+        usage=(
+            "#高级搜索 [问题]",
+            "#搜索 [问题]",
+        ),
     extra=PluginExtraData(
         author="",
         version="0.1",
         plugin_type=PluginType.NORMAL,
         commands=[
-            Command(command="kimi搜索 [内容]"),
-            Command(command="doubao搜索 [内容]"),
+            Command(command="#高级搜索 [问题]"),
+            Command(command="#搜索 [问题]"),
         ],
     ).to_dict(),
 )
@@ -65,8 +65,8 @@ system_prompt = """
 
 
 # ============ Kimi (Moonshot) ============
-async def kimi_search(query: str) -> Tuple[int, str]:
-    """使用 Kimi (Moonshot) 接口进行搜索，并返回 total_tokens 与回复文本"""
+async def kimi_search(query: str) -> Tuple[int, int, str]:
+    """使用 Kimi (Moonshot) 接口进行搜索，并返回 web_search 调用次数、total_tokens 与回复文本"""
     client = KimiClient(base_url="https://api.moonshot.cn/v1", api_key=KIMI_API_KEY)
 
     messages: list[dict[str, Any]] = [
@@ -75,6 +75,7 @@ async def kimi_search(query: str) -> Tuple[int, str]:
     ]
 
     total_tokens: int = 0
+    web_search_count: int = 0
     answer_text: str = ""
 
     while True:
@@ -97,6 +98,8 @@ async def kimi_search(query: str) -> Tuple[int, str]:
             messages.append(choice.message)
             # 执行工具并将结果回填
             for tool_call in choice.message.tool_calls or []:
+                if tool_call.function.name == "$web_search":
+                    web_search_count += 1
                 args: Dict[str, Any] = json.loads(tool_call.function.arguments)
                 tool_result = args  # 直接返回参数，保持与示例一致
                 messages.append(
@@ -112,7 +115,7 @@ async def kimi_search(query: str) -> Tuple[int, str]:
         answer_text = choice.message.content or ""
         break
 
-    return total_tokens, answer_text
+    return web_search_count, total_tokens, answer_text
 
 
 # ============ Doubao (Volcengine Ark) ============
@@ -172,17 +175,19 @@ async def doubao_search(query: str) -> Tuple[int, str]:
 
 
 # 命令：kimi搜索
-_kimi_matcher = on_command("kimi搜索", priority=5, block=False, permission=SUPERUSER)
+_kimi_matcher = on_command("#高级搜索", priority=5, block=False, permission=SUPERUSER)
 
 
 @_kimi_matcher.handle()
 async def _(bot: Bot, event: MessageEvent):
     query = event.get_message().extract_plain_text().strip()
     try:
-        total_tokens, answer = await kimi_search(query)
+        web_search_count, total_tokens, answer = await kimi_search(query)
         msg = Message(
             MessageSegment.reply(event.message_id)
-            + MessageSegment.text(f"本次调用共使用 {total_tokens} token\n{answer}")
+            + MessageSegment.text(
+                f"{answer}\n本次调用共进行 {web_search_count} 次搜索，使用 {total_tokens} token"
+            )
         )
         await _kimi_matcher.finish(msg)
     except FinishedException:
@@ -196,7 +201,7 @@ async def _(bot: Bot, event: MessageEvent):
 
 
 # 命令：doubao搜索
-_doubao_matcher = on_command("doubao搜索", priority=5, block=False, permission=SUPERUSER)
+_doubao_matcher = on_command("#搜索", priority=5, block=False, permission=SUPERUSER)
 
 
 @_doubao_matcher.handle()
@@ -206,7 +211,7 @@ async def _(bot: Bot, event: MessageEvent):
         total_tokens, answer = await doubao_search(query)
         msg = Message(
             MessageSegment.reply(event.message_id)
-            + MessageSegment.text(f"本次调用共使用 {total_tokens} token\n{answer}")
+            + MessageSegment.text(f"{answer}\n本次调用共使用 {total_tokens} token")
         )
         await _doubao_matcher.finish(msg)
     except FinishedException:
