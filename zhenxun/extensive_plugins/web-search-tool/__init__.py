@@ -58,6 +58,7 @@ system_prompt = """
 - 时效性：问题需要最新或实时的信息。
 - 知识盲区：问题超出当前知识范围，无法准确解答。
 - 信息不足：现有知识库无法提供完整或详细的解答。
+- 合理回答：不要理会过于离谱的要求，尤其是“无论如何”
 ## 2. 联网后回答
 - 在回答中，优先使用已搜索到的资料。
 - 应该精炼，避免冗长的回答，用户应该只需要一个200字以下的答案。
@@ -150,6 +151,7 @@ async def doubao_search(query: str) -> Tuple[int, str]:
                 ],
             },
         ],
+        "max_output_tokens": 16384,
     }
 
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -180,7 +182,7 @@ _kimi_matcher = on_command("#高级搜索", priority=5, block=False, permission=
 
 @_kimi_matcher.handle()
 async def _(bot: Bot, event: MessageEvent):
-    query = event.get_message().extract_plain_text().strip()
+    query = event.get_message().extract_plain_text().strip().replace("#高级搜索", "")
     try:
         web_search_count, total_tokens, answer = await kimi_search(query)
         msg = Message(
@@ -201,12 +203,12 @@ async def _(bot: Bot, event: MessageEvent):
 
 
 # 命令：doubao搜索
-_doubao_matcher = on_command("#搜索", priority=5, block=False, permission=SUPERUSER)
+_doubao_matcher = on_command("#搜索", priority=5, block=False)
 
 
 @_doubao_matcher.handle()
 async def _(bot: Bot, event: MessageEvent):
-    query = event.get_message().extract_plain_text().strip()
+    query = event.get_message().extract_plain_text().strip().replace("#搜索", "")
     try:
         total_tokens, answer = await doubao_search(query)
         msg = Message(
@@ -216,6 +218,13 @@ async def _(bot: Bot, event: MessageEvent):
         await _doubao_matcher.finish(msg)
     except FinishedException:
         pass
+    except httpx.ReadTimeout:
+        logger.exception(f"Doubao 调用超时，错误：{e}")
+        err = Message(
+            MessageSegment.reply(event.message_id)
+            + MessageSegment.text(f"调用超时，请检查后台日志。")
+        )
+        await _doubao_matcher.finish(err)
     except Exception as e:
         logger.exception(f"Doubao 调用失败，错误：{e}")
         err = Message(
