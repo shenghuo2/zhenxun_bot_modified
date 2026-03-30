@@ -14,7 +14,6 @@ from zhenxun.utils.user_agent import get_user_agent
 from .config import REPLY_IMAGE
 from .db import utcnow
 
-
 # ── 通用工具 ─────────────────────────────────────────────
 
 def compute_sha256(text: str) -> str:
@@ -23,11 +22,22 @@ def compute_sha256(text: str) -> str:
 
 def get_time_diff_str(timestamp: datetime.datetime) -> str:
     now = utcnow()
+    # 转换为 UTC+8 用于日期比较和显示
+    utc8 = datetime.timezone(datetime.timedelta(hours=8))
+    now_local = now.replace(tzinfo=datetime.timezone.utc).astimezone(utc8)
+    ts_local = timestamp.replace(tzinfo=datetime.timezone.utc).astimezone(utc8)
+
+    if now_local.year != ts_local.year:
+        return f"{ts_local.year}年{ts_local.month}月{ts_local.day}日"
+    if now_local.month != ts_local.month:
+        return f"{ts_local.month}月{ts_local.day}日"
+    if now_local.day != ts_local.day:
+        return f"{ts_local.day}日"
+
+    # 同一天内
     diff = now - timestamp
-    if diff.days > 0:
-        return f"{diff.days}天之前"
     if diff.seconds >= 3600:
-        return f"{diff.seconds // 3600}小时之前"
+        return f"{ts_local.hour}点"
     if diff.seconds >= 60:
         return f"{diff.seconds // 60}分钟之前"
     if diff.seconds > 0:
@@ -42,7 +52,10 @@ def int_to_datetime(timestamp: int) -> datetime.datetime:
 
 
 def build_reply_image_seg() -> MessageSegment:
-    return MessageSegment.image(file=f"file:///{REPLY_IMAGE}")
+    import base64
+    data = REPLY_IMAGE.read_bytes()
+    b64 = base64.b64encode(data).decode()
+    return MessageSegment.image(file=f"base64://{b64}")
 
 
 def extract_file_unique(message_content: str) -> str | None:

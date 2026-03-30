@@ -1,31 +1,21 @@
 import asyncio
 
 from nonebot import on_command
-from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import (Bot, Message, MessageEvent,
+                                         MessageSegment)
 from nonebot.permission import SUPERUSER
 from nonebot_plugin_uninfo import Uninfo
 
 from zhenxun.services.log import logger
 
 from ..config import get_cfg
-from ..db import (
-    AsyncSessionLocal,
-    delete_message_record,
-    find_existing_message,
-    find_message_by_id,
-    store_message,
-)
-from ..utils import (
-    build_reply_image_seg,
-    compute_sha256,
-    contains_bilibili_url,
-    extract_bilibili_card_info,
-    extract_bilibili_url,
-    get_time_diff_str,
-    int_to_datetime,
-    resolve_bilibili_video_id,
-)
-
+from ..db import (AsyncSessionLocal, delete_message_record,
+                  find_existing_message, find_message_by_id,
+                  increment_hit_count, store_message)
+from ..utils import (build_reply_image_seg, compute_sha256,
+                     contains_bilibili_url, extract_bilibili_card_info,
+                     extract_bilibili_url, get_time_diff_str, int_to_datetime,
+                     resolve_bilibili_video_id)
 
 # ── 辅助：发送后自动撤回 ─────────────────────────────────
 
@@ -75,12 +65,13 @@ async def handle_mark(event: MessageEvent, bot: Bot, session: Uninfo):
         async with AsyncSessionLocal() as db:
             existing = await find_existing_message(db, sha, group_id)
             if existing:
+                count = await increment_hit_count(db, existing)
                 diff = get_time_diff_str(existing.timestamp)
                 await mark_cmd.finish(
                     Message(
                         MessageSegment.reply(existing.message_id)
                         + MessageSegment.text(
-                            f"视频《{video_title}》在{diff}就有人标记过了，还标记，杂鱼~"
+                            f"视频《{video_title}》在{diff}就有人标记过了，还标记，杂鱼~（第{count}次发了捏）"
                         )
                         + build_reply_image_seg()
                     )
@@ -103,12 +94,13 @@ async def handle_mark(event: MessageEvent, bot: Bot, session: Uninfo):
                 async with AsyncSessionLocal() as db:
                     existing = await find_existing_message(db, sha, group_id)
                     if existing:
+                        count = await increment_hit_count(db, existing)
                         diff = get_time_diff_str(existing.timestamp)
                         await mark_cmd.finish(
                             Message(
                                 MessageSegment.reply(existing.message_id)
                                 + MessageSegment.text(
-                                    f"视频《{video_title}》在{diff}就有人标记过了，还标记，杂鱼~"
+                                    f"视频《{video_title}》在{diff}就有人标记过了，还标记，杂鱼~（第{count}次发了捏）"
                                 )
                                 + build_reply_image_seg()
                             )
@@ -148,11 +140,12 @@ async def handle_mark(event: MessageEvent, bot: Bot, session: Uninfo):
     async with AsyncSessionLocal() as db:
         existing = await find_existing_message(db, sha, group_id)
         if existing:
+            count = await increment_hit_count(db, existing)
             diff = get_time_diff_str(existing.timestamp)
             await mark_cmd.finish(
                 Message(
                     MessageSegment.reply(existing.message_id)
-                    + MessageSegment.text(f"该图片在{diff}就有人标记过了，还标记，杂鱼~")
+                    + MessageSegment.text(f"该图片在{diff}就有人标记过了，还标记，杂鱼~（第{count}次发了捏）")
                     + build_reply_image_seg()
                 )
             )

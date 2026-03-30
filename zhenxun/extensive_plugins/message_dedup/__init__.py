@@ -38,8 +38,10 @@ async def _rule(session: Uninfo) -> bool:
     if not session.group:
         return False  # 只在群聊中生效
     whitelist = get_cfg("GROUP_WHITELIST")
-    if whitelist and session.group.id not in whitelist:
-        return False
+    if whitelist:
+        whitelist_str = {str(g) for g in whitelist}
+        if str(session.group.id) not in whitelist_str:
+            return False
     return True
 
 

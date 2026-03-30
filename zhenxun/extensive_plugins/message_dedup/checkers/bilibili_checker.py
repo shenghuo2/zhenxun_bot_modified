@@ -1,17 +1,14 @@
-from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import (Bot, Message, MessageEvent,
+                                         MessageSegment)
 from nonebot_plugin_uninfo import Uninfo
 
 from zhenxun.services.log import logger
 
-from ..db import AsyncSessionLocal, find_existing_message, store_message
-from ..utils import (
-    build_reply_image_seg,
-    contains_bilibili_url,
-    extract_bilibili_card_info,
-    extract_bilibili_url,
-    get_time_diff_str,
-    resolve_bilibili_video_id,
-)
+from ..db import (AsyncSessionLocal, find_existing_message,
+                  increment_hit_count, store_message)
+from ..utils import (build_reply_image_seg, contains_bilibili_url,
+                     extract_bilibili_card_info, extract_bilibili_url,
+                     get_time_diff_str, resolve_bilibili_video_id)
 
 
 def _make_video_sha(video_id: str) -> str:
@@ -30,11 +27,14 @@ async def _check_and_reply(
     async with AsyncSessionLocal() as db:
         existing = await find_existing_message(db, sha, group_id)
         if existing:
+            count = await increment_hit_count(db, existing)
             diff = get_time_diff_str(existing.timestamp)
             return Message(
                 MessageSegment.reply(existing.message_id)
                 + MessageSegment.at(event.user_id)
-                + MessageSegment.text(f"视频《{video_title}》在{diff}就有人发过了喵")
+                + MessageSegment.text(
+                    f"视频《{video_title}》在{diff}就有人发过了喵（第{count}次发了捏）"
+                )
                 + build_reply_image_seg()
             )
         else:
