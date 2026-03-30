@@ -89,6 +89,47 @@ async def get_forward_messages(forward_message_id: str, bot: Bot) -> list[str]:
         return []
 
 
+async def get_forward_fingerprint(forward_message_id: str, bot: Bot) -> str | None:
+    """从转发消息中提取稳定指纹。
+
+    调用 get_forward_msg API 获取子消息列表，
+    使用每条子消息的 (time, real_seq) 拼接后取 SHA-256。
+    这两个字段在不同群转发同一条消息时完全一致，
+    而 message_id、file、file_size、url 等字段都不稳定。
+
+    单条子消息（通常是媒体文件）时额外加入 user_id 和 group_id 降低碰撞。
+    """
+    try:
+        response: dict = await bot.call_api(
+            "get_forward_msg", message_id=forward_message_id
+        )
+        messages = response.get("messages", [])
+        if not messages:
+            return None
+
+        # 单条子消息且是媒体文件时，加上 user_id 和 group_id 降低碰撞
+        # 多条子消息时 time+real_seq 组合已足够唯一
+        use_extra = len(messages) == 1
+
+        parts = []
+        for msg in messages:
+            t = msg.get("time", "")
+            seq = msg.get("real_seq", "")
+            if use_extra:
+                uid = msg.get("user_id", "")
+                gid = msg.get("group_id", "")
+                parts.append(f"{uid}@{gid}:{t}:{seq}")
+            else:
+                parts.append(f"{t}:{seq}")
+
+        fingerprint = "|".join(parts)
+        logger.info(f"转发消息指纹拼接: {fingerprint}", "message_dedup")
+        return compute_sha256(fingerprint)
+    except Exception as e:
+        logger.error(f"获取转发消息指纹失败: {e}", "message_dedup")
+        return None
+
+
 # ── Bilibili 工具 ─────────────────────────────────────────
 
 BILIBILI_URL_PATTERNS = [

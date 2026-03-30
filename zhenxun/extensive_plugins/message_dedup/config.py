@@ -16,7 +16,7 @@ CONFIG_DEFS = [
     {
         "module": MODULE,
         "key": "GROUP_WHITELIST",
-        "value": [1040437158,555741990, 912045649, 955100916], 
+        "value": [], 
         "default_value": [],
         "help": "启用该插件的群号列表，为空则全部启用",
         "type": list,
@@ -24,7 +24,7 @@ CONFIG_DEFS = [
     {
         "module": MODULE,
         "key": "ENABLE_FORWARD_CHECK",
-        "value": False,
+        "value": True,
         "default_value": False,
         "help": "是否启用转发消息查重",
         "type": bool,
