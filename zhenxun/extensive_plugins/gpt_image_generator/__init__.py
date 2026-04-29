@@ -34,8 +34,8 @@ from .api import (
     find_provider,
 )
 from .config import (
-    COOLDOWN_SECONDS,
-    DAILY_LIMIT,
+    COOLDOWN_EXTRA_SECONDS,
+    COOLDOWN_FAIL_SECONDS,
     DEFAULT_COUNT,
     DEFAULT_QUALITY,
     MAX_COUNT_REGULAR,
@@ -52,7 +52,7 @@ from .config import (
     SIZE_PRESETS,
     SUPERUSER_RETRY_CHAIN,
 )
-from .usage_tracker import check_user_limit, record_usage
+from .usage_tracker import add_credits, check_user_limit, record_usage
 
 __plugin_meta__ = PluginMetadata(
     name="GPT改图",
@@ -81,7 +81,8 @@ _recall_listener = on_notice(
 )
 
 _active_requests: dict[str, asyncio.Event] = {}
-_user_cooldowns: dict[str, float] = {}
+_user_cooldowns: dict[str, float] = {}     # user_id -> cooldown_end_timestamp
+_user_generating: dict[str, bool] = {}     # user_id -> 是否正在生成中
 
 
 # ============ 工具函数 ============
@@ -93,19 +94,28 @@ def is_superuser(event: MessageEvent) -> bool:
         return False
 
 
-def check_cooldown(user_id: str) -> tuple[bool, int]:
-    """返回 (是否在冷却中, 剩余秒数)"""
+def is_group_admin(event: MessageEvent) -> bool:
+    """检查是否为群管理员或群主 (用于添加次数命令)"""
+    if not isinstance(event, GroupMessageEvent):
+        return False
+    return event.sender.role in ("admin", "owner")
+
+
+def check_cooldown(user_id: str) -> tuple[int, int]:
+    """返回 (是否在冷却中, 剩余秒数), 同时检查生成中标志"""
+    if _user_generating.get(user_id):
+        return 9999, 0  # 生成中, 用大值表示
     if user_id not in _user_cooldowns:
-        return False, 0
-    elapsed = time.time() - _user_cooldowns[user_id]
-    remaining = COOLDOWN_SECONDS - elapsed
+        return 0, 0
+    remaining = int(_user_cooldowns[user_id] - time.time())
     if remaining > 0:
-        return True, int(remaining)
-    return False, 0
+        return remaining, remaining
+    return 0, 0
 
 
-def set_cooldown(user_id: str) -> None:
-    _user_cooldowns[user_id] = time.time()
+def set_cooldown(user_id: str, duration: float) -> None:
+    """设置冷却结束时间 (从现在起 duration 秒)"""
+    _user_cooldowns[user_id] = time.time() + duration
 
 
 def strip_command(text: str) -> str:
@@ -462,6 +472,29 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
     group_id = str(event.group_id) if isinstance(event, GroupMessageEvent) else None
     is_su = is_superuser(event)
 
+    # Step 0: 管理员添加次数命令
+    raw_text = event.get_message().extract_plain_text().strip()
+    remaining_text = strip_command(raw_text)
+    credits_match = re.match(r"^添加次数\s+(\d{5,})\s*$", remaining_text)
+    if credits_match:
+        target_qq = credits_match.group(1)
+        if is_su or is_group_admin(event):
+            new_balance = add_credits(target_qq, 1)
+            await _gpt_image.finish(
+                Message(
+                    MessageSegment.reply(event.message_id)
+                    + MessageSegment.text(f"已为 {target_qq} 添加 1 次，当前永久次数余额 {new_balance}")
+                )
+            )
+        else:
+            await _gpt_image.finish(
+                Message(
+                    MessageSegment.reply(event.message_id)
+                    + MessageSegment.text("权限不足")
+                )
+            )
+        return
+
     # Step 1: 回应表情
     try:
         await bot.call_api(
@@ -470,9 +503,17 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
     except Exception:
         pass
 
-    # Step 2: 检查冷却 (普通用户)
+    # Step 2: 检查冷却/生成中状态 (普通用户)
     if not is_su:
         on_cd, remaining = check_cooldown(user_id)
+        if _user_generating.get(user_id):
+            await _gpt_image.finish(
+                Message(
+                    MessageSegment.reply(event.message_id)
+                    + MessageSegment.text("你的上一张图还在生成中，请等待完成后再次使用~")
+                )
+            )
+            return
         if on_cd:
             minutes = remaining // 60
             seconds = remaining % 60
@@ -488,21 +529,15 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
             )
             return
 
-    # Step 4: 标记冷却开始 (普通用户, 从命令发出时计时)
-    if not is_su:
-        set_cooldown(user_id)
-
-    # Step 5: 解析命令参数
-    raw_text = event.get_message().extract_plain_text().strip()
-    remaining = strip_command(raw_text)
-    parsed = parse_command_args(remaining)
+    # Step 3: 解析命令参数
+    parsed = parse_command_args(remaining_text)
     prompt = parsed["prompt"]
     size_key = parsed["size_key"] or "1k"
     ratio_key = parsed["ratio_key"]
     count = parsed["count"] or DEFAULT_COUNT
     quality = parsed["quality_key"] or DEFAULT_QUALITY
 
-    # 普通用户校验 count
+    # Step 4: 普通用户校验
     if not is_su:
         if count > MAX_COUNT_REGULAR:
             await _gpt_image.finish(
@@ -512,19 +547,21 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
                 )
             )
             return
-        # 检查每日限制需考虑 count
-        can_use, daily_count = check_user_limit(user_id)
-        if daily_count + count > DAILY_LIMIT:
-            remaining_today = max(0, DAILY_LIMIT - daily_count)
+        limit_info = check_user_limit(user_id, group_id)
+        if limit_info["total_available"] < count:
             await _gpt_image.finish(
                 Message(
                     MessageSegment.reply(event.message_id)
                     + MessageSegment.text(
-                        f"今日剩余 {remaining_today} 次，无法生成 {count} 张"
+                        f"今日剩余免费 {limit_info['free_remaining']} 次 + "
+                        f"永久次数 {limit_info['permanent_credits']} 次，"
+                        f"共 {limit_info['total_available']} 次，无法生成 {count} 张"
                     )
                 )
             )
             return
+        # 标记生成中 (阻止并发)
+        _user_generating[user_id] = True
 
     # Step 6: 提取图片
     image_urls = extract_images(event)
@@ -593,6 +630,7 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
     else:
         retry_chain = SUPERUSER_RETRY_CHAIN if is_su else REGULAR_RETRY_CHAIN
 
+    success = False
     try:
         result, provider_name, fallback_errors = await execute_retry_chain(
             cancel_event=cancel_event,
@@ -604,6 +642,7 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
             count=count,
             quality=quality,
         )
+        success = True
     except asyncio.CancelledError:
         await _gpt_image.finish(
             Message(
@@ -624,6 +663,13 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
         return
     finally:
         _active_requests.pop(msg_id_str, None)
+        if not is_su:
+            _user_generating.pop(user_id, None)
+            total_duration = time.time() - start_time
+            if success:
+                set_cooldown(user_id, total_duration + COOLDOWN_EXTRA_SECONDS)
+            else:
+                set_cooldown(user_id, COOLDOWN_FAIL_SECONDS)
 
     # Step 11: 记录用量和费用
     total_duration = time.time() - start_time
@@ -660,9 +706,15 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
                 f"\n群累计: {usage_stats['group_total_count']}次 / "
                 f"{usage_stats['group_total_cost']:.2f}￥"
             )
-        # 显示剩余次数
-        remaining = max(0, DAILY_LIMIT - usage_stats["user_daily_count"])
-        stats += f"\n今日剩余: {remaining}次"
+        # 显示额度信息
+        daily_limit = usage_stats["daily_limit"]
+        free_used = usage_stats["user_daily_count"]
+        perm_credits = usage_stats["permanent_credits"]
+        cd_dur = int(COOLDOWN_EXTRA_SECONDS + total_duration)
+        stats += f"\n今日免费: {free_used}/{daily_limit} | 永久次数: {perm_credits}"
+        if usage_stats["used_permanent"] > 0:
+            stats += f" (本次使用 {usage_stats['used_permanent']} 次永久额度)"
+        stats += f"\n冷却: {cd_dur}s (耗时{total_duration:.0f}s + {COOLDOWN_EXTRA_SECONDS}s)"
 
     # 回退警告
     if fallback_errors:
