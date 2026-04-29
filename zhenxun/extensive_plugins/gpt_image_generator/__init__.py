@@ -94,13 +94,6 @@ def is_superuser(event: MessageEvent) -> bool:
         return False
 
 
-def is_group_admin(event: MessageEvent) -> bool:
-    """检查是否为群管理员或群主 (用于添加次数命令)"""
-    if not isinstance(event, GroupMessageEvent):
-        return False
-    return event.sender.role in ("admin", "owner")
-
-
 def check_cooldown(user_id: str) -> tuple[int, int]:
     """返回 (是否在冷却中, 剩余秒数), 同时检查生成中标志"""
     if _user_generating.get(user_id):
@@ -478,7 +471,7 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
     credits_match = re.match(r"^添加次数\s+(\d{5,})\s*$", remaining_text)
     if credits_match:
         target_qq = credits_match.group(1)
-        if is_su or is_group_admin(event):
+        if is_su:
             new_balance = add_credits(target_qq, 1)
             await _gpt_image.finish(
                 Message(

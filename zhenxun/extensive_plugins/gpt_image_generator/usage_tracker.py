@@ -1,7 +1,7 @@
 """
 用量追踪
-- 每人每天限制 N 次 (按群配置, 按天清零)
-- 优先消耗每日免费额度, 再用永久次数 (不失效)
+- 每日免费次数按 (用户+群/私聊) 隔离, 按天清零
+- 优先消耗每日免费额度, 再用永久次数 (不失效, 全局)
 - 按用户累计计费 (不按天清零)
 - 按群组累计计费 (不按天清零, 不含 superuser)
 - superuser 单独累计计费 (不加入群组统计)
@@ -25,7 +25,7 @@ def _load_data() -> dict:
         except (OSError, json.JSONDecodeError):
             pass
     return {
-        "users": {},       # {total_count, total_cost, daily_count, last_date, permanent_credits}
+        "users": {},       # {total_count, total_cost, permanent_credits, daily_scopes: {scope: {count, last_date}}}
         "groups": {},       # {total_count, total_cost}
         "superusers": {},   # {total_count, total_cost}
     }
@@ -47,13 +47,42 @@ def _get_daily_limit(group_id: str | None) -> int:
     return DAILY_LIMIT
 
 
-def add_credits(user_id: str, amount: int) -> int:
-    """
-    给用户添加永久次数 (不失效)
+def _scope_key(group_id: str | None) -> str:
+    """生成每日计数的 scope key: 群号 或 'private'"""
+    return group_id if group_id else "private"
 
-    Returns:
-        int: 用户当前永久次数余额
-    """
+
+def _get_daily_count(user_data: dict, scope: str, today: str) -> int:
+    """获取指定 scope 的今日已用次数"""
+    scopes = user_data.get("daily_scopes", {})
+    scope_data = scopes.get(scope, {})
+    if scope_data.get("last_date") != today:
+        return 0
+    return scope_data.get("count", 0)
+
+
+def _set_daily_count(user_data: dict, scope: str, today: str, count: int) -> None:
+    """设置指定 scope 的今日已用次数"""
+    if "daily_scopes" not in user_data:
+        user_data["daily_scopes"] = {}
+    user_data["daily_scopes"][scope] = {"count": count, "last_date": today}
+
+
+def _migrate_old_format(user_data: dict, today: str) -> None:
+    """兼容旧格式: daily_count/last_date → daily_scopes"""
+    if "daily_count" in user_data and "daily_scopes" not in user_data:
+        old_count = user_data.pop("daily_count", 0)
+        old_date = user_data.pop("last_date", "")
+        if old_date == today and old_count > 0:
+            user_data["daily_scopes"] = {
+                "private": {"count": old_count, "last_date": old_date}
+            }
+        else:
+            user_data["daily_scopes"] = {}
+
+
+def add_credits(user_id: str, amount: int) -> int:
+    """给用户添加永久次数 (不失效). 返回当前余额."""
     data = _load_data()
     today = _get_today()
 
@@ -62,12 +91,11 @@ def add_credits(user_id: str, amount: int) -> int:
 
     if user_id not in data["users"]:
         data["users"][user_id] = {
-            "total_count": 0,
-            "total_cost": 0.0,
-            "daily_count": 0,
-            "last_date": today,
-            "permanent_credits": 0,
+            "total_count": 0, "total_cost": 0.0,
+            "permanent_credits": 0, "daily_scopes": {},
         }
+    else:
+        _migrate_old_format(data["users"][user_id], today)
 
     user_data = data["users"][user_id]
     if "permanent_credits" not in user_data:
@@ -83,20 +111,19 @@ def check_user_limit(user_id: str, group_id: str | None) -> dict:
     检查普通用户是否可生成, 优先消耗每日免费额度.
 
     Returns:
-        {"can_use": bool, "daily_count": int, "daily_limit": int,
-         "permanent_credits": int, "free_remaining": int}
+        {"can_use", "daily_count", "daily_limit", "permanent_credits",
+         "free_remaining", "total_available"}
     """
     data = _load_data()
     today = _get_today()
     daily_limit = _get_daily_limit(group_id)
+    scope = _scope_key(group_id)
 
     user_data = data.get("users", {}).get(user_id, {})
-    last_date = user_data.get("last_date", "")
-    daily_count = user_data.get("daily_count", 0)
-    permanent_credits = user_data.get("permanent_credits", 0)
+    _migrate_old_format(user_data, today)
 
-    if last_date != today:
-        daily_count = 0
+    daily_count = _get_daily_count(user_data, scope, today)
+    permanent_credits = user_data.get("permanent_credits", 0)
 
     free_remaining = max(0, daily_limit - daily_count)
     total_available = free_remaining + permanent_credits
@@ -120,17 +147,11 @@ def record_usage(
 ) -> dict:
     """
     记录一次使用 (仅在成功时调用).
-    优先消耗每日免费额度, 超出部分扣永久次数.
-
-    Args:
-        user_id: 用户 ID
-        group_id: 群 ID (可选)
-        cost: 本次总花费 (RMB, 已含 count 倍率)
-        is_superuser: 是否 superuser
-        count: 生成张数
+    优先消耗该 scope 的每日免费额度, 超出部分扣永久次数.
     """
     data = _load_data()
     today = _get_today()
+    scope = _scope_key(group_id)
 
     if is_superuser:
         if "superusers" not in data:
@@ -140,19 +161,13 @@ def record_usage(
         su_data = data["superusers"][user_id]
         su_data["total_count"] += count
         su_data["total_cost"] += cost
-
         _save_data(data)
-
         return {
             "user_total_count": su_data["total_count"],
             "user_total_cost": su_data["total_cost"],
-            "user_daily_count": 0,
-            "daily_limit": 0,
-            "permanent_credits": 0,
-            "used_free": 0,
-            "used_permanent": 0,
-            "group_total_count": 0,
-            "group_total_cost": 0.0,
+            "user_daily_count": 0, "daily_limit": 0,
+            "permanent_credits": 0, "used_free": 0, "used_permanent": 0,
+            "group_total_count": 0, "group_total_cost": 0.0,
             "is_superuser": True,
         }
 
@@ -162,30 +177,24 @@ def record_usage(
 
     if user_id not in data["users"]:
         data["users"][user_id] = {
-            "total_count": 0,
-            "total_cost": 0.0,
-            "daily_count": 0,
-            "last_date": today,
-            "permanent_credits": 0,
+            "total_count": 0, "total_cost": 0.0,
+            "permanent_credits": 0, "daily_scopes": {},
         }
+    else:
+        _migrate_old_format(data["users"][user_id], today)
 
     user_data = data["users"][user_id]
-
-    if user_data.get("last_date", "") != today:
-        user_data["daily_count"] = 0
-        user_data["last_date"] = today
-
     if "permanent_credits" not in user_data:
         user_data["permanent_credits"] = 0
 
     daily_limit = _get_daily_limit(group_id)
-    free_remaining = max(0, daily_limit - user_data["daily_count"])
+    daily_count = _get_daily_count(user_data, scope, today)
+    free_remaining = max(0, daily_limit - daily_count)
 
-    # 优先用免费额度, 超出部分扣永久次数
     used_free = min(count, free_remaining)
     used_permanent = count - used_free
 
-    user_data["daily_count"] += used_free
+    _set_daily_count(user_data, scope, today, daily_count + used_free)
     user_data["permanent_credits"] -= used_permanent
     user_data["total_count"] += count
     user_data["total_cost"] += cost
@@ -197,18 +206,18 @@ def record_usage(
             data["groups"] = {}
         if group_id not in data["groups"]:
             data["groups"][group_id] = {"total_count": 0, "total_cost": 0.0}
-        group_data = data["groups"][group_id]
-        group_data["total_count"] += count
-        group_data["total_cost"] += cost
-        group_total_count = group_data["total_count"]
-        group_total_cost = group_data["total_cost"]
+        gd = data["groups"][group_id]
+        gd["total_count"] += count
+        gd["total_cost"] += cost
+        group_total_count = gd["total_count"]
+        group_total_cost = gd["total_cost"]
 
     _save_data(data)
 
     return {
         "user_total_count": user_data["total_count"],
         "user_total_cost": user_data["total_cost"],
-        "user_daily_count": user_data["daily_count"],
+        "user_daily_count": daily_count + used_free,
         "daily_limit": daily_limit,
         "permanent_credits": user_data["permanent_credits"],
         "used_free": used_free,
@@ -221,33 +230,22 @@ def record_usage(
 
 def get_group_stats(group_id: str) -> dict:
     data = _load_data()
-    group_data = data.get("groups", {}).get(group_id, {})
-    return {
-        "total_count": group_data.get("total_count", 0),
-        "total_cost": group_data.get("total_cost", 0.0),
-    }
+    gd = data.get("groups", {}).get(group_id, {})
+    return {"total_count": gd.get("total_count", 0), "total_cost": gd.get("total_cost", 0.0)}
 
 
 def get_user_stats(user_id: str) -> dict:
     data = _load_data()
     today = _get_today()
-    user_data = data.get("users", {}).get(user_id, {})
-    last_date = user_data.get("last_date", "")
-    daily_count = user_data.get("daily_count", 0)
-    if last_date != today:
-        daily_count = 0
+    ud = data.get("users", {}).get(user_id, {})
     return {
-        "total_count": user_data.get("total_count", 0),
-        "total_cost": user_data.get("total_cost", 0.0),
-        "daily_count": daily_count,
-        "permanent_credits": user_data.get("permanent_credits", 0),
+        "total_count": ud.get("total_count", 0),
+        "total_cost": ud.get("total_cost", 0.0),
+        "permanent_credits": ud.get("permanent_credits", 0),
     }
 
 
 def get_superuser_stats(user_id: str) -> dict:
     data = _load_data()
-    su_data = data.get("superusers", {}).get(user_id, {})
-    return {
-        "total_count": su_data.get("total_count", 0),
-        "total_cost": su_data.get("total_cost", 0.0),
-    }
+    su = data.get("superusers", {}).get(user_id, {})
+    return {"total_count": su.get("total_count", 0), "total_cost": su.get("total_cost", 0.0)}
