@@ -359,9 +359,11 @@ async def execute_retry_chain(
     size_str: str,
     count: int = 1,
     quality: str = "medium",
+    needs_custom_size: bool = False,
 ) -> tuple[ImageGenerationResult, str, list[str]]:
     """
     遍历重试链调用提供商, 循环 count 次 (API 固定 n=1)。
+    needs_custom_size 时自动跳过 size_faithful=False 的供应商。
     成功时返回 (result, provider_name, fallback_errors)。
     失败抛 RuntimeError。
     被取消抛 asyncio.CancelledError。
@@ -385,6 +387,11 @@ async def execute_retry_chain(
                 provider_cfg = find_provider(provider_name)
                 if not provider_cfg:
                     errors.append(f"{provider_name}: 未找到配置")
+                    continue
+                # 需要自定义尺寸但不忠实的供应商自动跳过
+                if needs_custom_size and not provider_cfg.get("size_faithful", True):
+                    errors.append(f"{provider_name}: 不支持自定义分辨率, 已自动切换")
+                    logger.info(f"跳过 {provider_name}: 不支持自定义分辨率")
                     continue
                 client = GPTImageClient(provider_cfg)
                 p_start = time.time()
@@ -623,6 +630,9 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
     else:
         retry_chain = SUPERUSER_RETRY_CHAIN if is_su else REGULAR_RETRY_CHAIN
 
+    # 需要自定义分辨率 (非默认尺寸 或 图生图)
+    needs_custom_size = (size_key != "1k" or ratio_key != "1:1" or has_images)
+
     success = False
     try:
         result, provider_name, fallback_errors = await execute_retry_chain(
@@ -634,6 +644,7 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
             size_str=size_str,
             count=count,
             quality=quality,
+            needs_custom_size=needs_custom_size,
         )
         success = True
     except asyncio.CancelledError:
