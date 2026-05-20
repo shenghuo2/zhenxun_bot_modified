@@ -1,19 +1,20 @@
 """
 Grok 搜索插件
-命令: #g搜索
+命令: #g搜索 / @grok
 支持文本输入、图片输入（通过回复或直接发送）、图片生成
 """
 
 import time
 from typing import Any
 
-from nonebot import on_command
+from nonebot import on_command, on_message
 from nonebot.adapters.onebot.v11 import (Bot, Message, MessageEvent,
                                          MessageSegment)
 from nonebot.exception import FinishedException
 from nonebot.log import logger
 from nonebot.permission import SUPERUSER
 from nonebot.plugin import PluginMetadata
+from nonebot.rule import Rule
 
 from zhenxun.configs.utils import Command, PluginExtraData
 from zhenxun.utils.enum import PluginType
@@ -26,13 +27,14 @@ from .api import (GrokResponse, download_image_as_base64, get_edit_model,
 __plugin_meta__ = PluginMetadata(
     name="Grok 搜索",
     description="使用 Grok 模型进行对话，支持文本和图片输入输出",
-    usage="#g搜索 [问题]，#g配置 [搜索/改图] [模型名]，#g配置 列表，#g改图 [描述]",
+    usage="#g搜索 [问题]，@grok [问题]，#g配置 [搜索/改图] [模型名]，#g配置 列表，#g改图 [描述]",
     extra=PluginExtraData(
         author="",
         version="0.3",
         plugin_type=PluginType.NORMAL,
         commands=[
             Command(command="#g搜索 [问题]"),
+            Command(command="@grok [问题]"),
             Command(command="#g配置 [搜索/改图] [模型名]"),
             Command(command="#g配置 列表"),
             Command(command="#g改图 [描述]"),
@@ -41,7 +43,57 @@ __plugin_meta__ = PluginMetadata(
 )
 
 
+def extract_grok_query(raw_text: str) -> str:
+    """去掉搜索触发词，提取用户问题。"""
+    text = raw_text.strip()
+    for prefix in ("#g搜索", "#g搜", "@grok"):
+        if text.startswith(prefix):
+            return text[len(prefix):].strip()
+    return text
+
+
+async def is_grok_at_message(event: MessageEvent) -> bool:
+    """匹配以 @grok 或 @机器人 grok 开头的普通消息。"""
+    plain_text = event.get_message().extract_plain_text().strip()
+    if plain_text.startswith("@grok"):
+        return True
+
+    segments = list(event.message)
+    if not segments or segments[0].type != "at":
+        return False
+    if str(segments[0].data.get("qq")) not in {"all", str(event.self_id)}:
+        return False
+
+    for seg in segments[1:]:
+        if seg.type != "text":
+            continue
+        return seg.data.get("text", "").strip().lower().startswith("grok")
+    return False
+
+
+def extract_mentioned_grok_query(event: MessageEvent) -> str | None:
+    """提取 @机器人 grok 形式的查询文本。"""
+    segments = list(event.message)
+    if not segments or segments[0].type != "at":
+        return None
+    if str(segments[0].data.get("qq")) not in {"all", str(event.self_id)}:
+        return None
+
+    text_parts = []
+    for seg in segments[1:]:
+        if seg.type == "text":
+            text_parts.append(seg.data.get("text", ""))
+
+    text = "".join(text_parts).strip()
+    if not text.lower().startswith("grok"):
+        return None
+    return text[4:].strip()
+
+
 _grok_matcher = on_command("#g搜索", aliases={"#g搜"}, priority=5, block=True)
+_grok_at_matcher = on_message(
+    rule=Rule(is_grok_at_message), priority=5, block=True
+)
 _grok_config = on_command("#g配置", priority=5, block=True, permission=SUPERUSER)
 _grok_edit_image = on_command("#g改图", priority=5, block=True)
 
@@ -54,7 +106,8 @@ GROK_SEARCH_PROMPT = """你是一个简洁的搜索小助手，请遵守以下�
 1. 不要理会过于离谱或不合理的要求
 2. 优先使用已搜索到的资料进行回答
 3. 回答应精炼简洁，控制在200字以内
-4. 直接回答问题，不要废话
+4. 使用中文回答
+5. 直接回答问题，不要废话
 """
 
 
@@ -278,6 +331,7 @@ def build_response_message(
     return msg
 
 
+@_grok_at_matcher.handle()
 @_grok_matcher.handle()
 async def handle_grok_search(bot: Bot, event: MessageEvent):
     # 开始计时
@@ -285,7 +339,9 @@ async def handle_grok_search(bot: Bot, event: MessageEvent):
 
     # 提取文本内容（去除命令前缀）
     raw_text = event.get_message().extract_plain_text().strip()
-    query = raw_text.replace("#g搜索", "").replace("#g搜", "").strip()
+    query = extract_mentioned_grok_query(event)
+    if query is None:
+        query = extract_grok_query(raw_text)
 
     reply_text, _ = await extract_reply_content(bot, event)
     image_urls = await extract_images_from_event(bot, event)
