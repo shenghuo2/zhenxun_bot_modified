@@ -1,6 +1,6 @@
 from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.plugin import PluginMetadata
-from nonebot_plugin_alconna import Alconna, Args, Arparma, Match, on_alconna
+from nonebot_plugin_alconna import Alconna, Args, Arparma, Match, MultiVar, on_alconna
 from nonebot_plugin_uninfo import Uninfo
 
 from zhenxun.configs.utils import Command, PluginExtraData
@@ -27,13 +27,13 @@ __plugin_meta__ = PluginMetadata(
     ).to_dict(),
 )
 
-_matcher = on_alconna(Alconna("点歌", Args["name?", str]), priority=5, block=True)
+_matcher = on_alconna(Alconna("点歌", Args["name?", MultiVar(str)]), priority=5, block=True)
 
 
 @_matcher.handle()
-async def handle_first_receive(name: Match[str]):
+async def handle_first_receive(name: Match[tuple[str, ...]]):
     if name.available:
-        _matcher.set_path_arg("name", name.result)
+        _matcher.set_path_arg("name", " ".join(name.result).strip())
 
 
 @_matcher.got_path("name", prompt="歌名是？")
