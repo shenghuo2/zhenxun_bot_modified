@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from nonebot.log import logger
 
 from .config import (GROK_API_BASE, GROK_API_KEY, GROK_MODEL,
                      load_runtime_config, save_runtime_config)
@@ -528,8 +529,9 @@ async def download_image_as_base64(url: str) -> str | None:
                 # 转换为 base64
                 b64_data = base64.b64encode(content).decode("utf-8")
                 return f"data:{mime_type};base64,{b64_data}"
-    except Exception:
-        pass
+            logger.warning(f"图片下载失败 status={response.status_code}, url={url[:120]}")
+    except Exception as e:
+        logger.warning(f"图片下载异常 url={url[:120]}: {e}")
     return None
 
 

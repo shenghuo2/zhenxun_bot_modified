@@ -41,7 +41,7 @@ __plugin_meta__ = PluginMetadata(
 )
 
 
-_grok_matcher = on_command("#g搜索", priority=5, block=True)
+_grok_matcher = on_command("#g搜索", aliases={"#g搜"}, priority=5, block=True)
 _grok_config = on_command("#g配置", priority=5, block=True, permission=SUPERUSER)
 _grok_edit_image = on_command("#g改图", priority=5, block=True)
 
@@ -58,14 +58,36 @@ GROK_SEARCH_PROMPT = """你是一个简洁的搜索小助手，请遵守以下�
 """
 
 
-def extract_message_content(message: Message) -> tuple[str, list[str]]:
+async def resolve_image_url(bot: Bot, seg: MessageSegment) -> str | None:
+    """从图片消息段中解析可下载 URL。"""
+    url = seg.data.get("url")
+    if url:
+        return url
+
+    file_id = seg.data.get("file")
+    if not file_id:
+        return None
+    if isinstance(file_id, str) and file_id.startswith(("http://", "https://")):
+        return file_id
+
+    try:
+        image_info = await bot.get_image(file=file_id)
+    except Exception as e:
+        logger.warning(f"获取图片 URL 失败 file={file_id}: {e}")
+        return None
+
+    image_url = image_info.get("url")
+    return image_url if isinstance(image_url, str) and image_url else None
+
+
+async def extract_message_content(bot: Bot, message: Message) -> tuple[str, list[str]]:
     """从消息段中提取文本和图片 URL。"""
     text_parts = []
     image_urls = []
 
     for seg in message:
         if seg.type == "image":
-            url = seg.data.get("url")
+            url = await resolve_image_url(bot, seg)
             if url:
                 image_urls.append(url)
         elif seg.type == "text":
@@ -95,7 +117,18 @@ def normalize_onebot_message(raw_message: Any) -> Message:
     if isinstance(raw_message, Message):
         return raw_message
     if isinstance(raw_message, list):
-        return Message(raw_message)
+        message = Message()
+        for item in raw_message:
+            if isinstance(item, MessageSegment):
+                message += item
+                continue
+            if not isinstance(item, dict):
+                continue
+            seg_type = item.get("type")
+            seg_data = item.get("data", {})
+            if isinstance(seg_type, str) and isinstance(seg_data, dict):
+                message += MessageSegment(type=seg_type, data=seg_data)
+        return message
     if isinstance(raw_message, str):
         return Message(raw_message)
     return Message(str(raw_message))
@@ -136,7 +169,7 @@ async def extract_reply_content(bot: Bot, event: MessageEvent) -> tuple[str, lis
         return "", []
 
     logger.debug(f"回复消息内容: {reply_message}")
-    return extract_message_content(reply_message)
+    return await extract_message_content(bot, reply_message)
 
 
 async def extract_images_from_event(bot: Bot, event: MessageEvent) -> list[str]:
@@ -152,7 +185,7 @@ async def extract_images_from_event(bot: Bot, event: MessageEvent) -> list[str]:
     # 1. 从当前消息中提取图片
     for seg in event.message:
         if seg.type == "image":
-            url = seg.data.get("url")
+            url = await resolve_image_url(bot, seg)
             if url:
                 image_urls.append(url)
 
@@ -254,19 +287,8 @@ async def handle_grok_search(bot: Bot, event: MessageEvent):
     raw_text = event.get_message().extract_plain_text().strip()
     query = raw_text.replace("#g搜索", "").replace("#g搜", "").strip()
 
-    # 提取回复消息的文本和图片
-    reply_text, reply_images = await extract_reply_content(bot, event)
-
-    # 从当前消息中提取图片
-    current_images = []
-    for seg in event.message:
-        if seg.type == "image":
-            url = seg.data.get("url")
-            if url:
-                current_images.append(url)
-
-    # 合并图片 URL
-    image_urls = current_images + reply_images
+    reply_text, _ = await extract_reply_content(bot, event)
+    image_urls = await extract_images_from_event(bot, event)
 
     # 如果有回复文本，将它作为上下文；用户额外输入的问题作为任务
     if reply_text:
@@ -453,18 +475,7 @@ async def handle_grok_edit_image(bot: Bot, event: MessageEvent):
     raw_text = event.get_message().extract_plain_text().strip()
     prompt = raw_text.replace("#g改图", "").strip()
 
-    # 提取回复消息的图片
-    _, reply_images = await extract_reply_content(bot, event)
-
-    # 从当前消息中提取图片
-    current_images = []
-    for seg in event.message:
-        if seg.type == "image":
-            url = seg.data.get("url")
-            if url:
-                current_images.append(url)
-
-    image_urls = current_images + reply_images
+    image_urls = await extract_images_from_event(bot, event)
 
     if not prompt and not image_urls:
         await _grok_edit_image.finish(
@@ -480,6 +491,14 @@ async def handle_grok_edit_image(bot: Bot, event: MessageEvent):
         image_base64_list = []
         if image_urls:
             image_base64_list = await download_images_to_base64(image_urls)
+            if not image_base64_list:
+                await _grok_edit_image.finish(
+                    Message(
+                        MessageSegment.reply(event.message_id)
+                        + MessageSegment.text("图片下载失败，请重试")
+                    )
+                )
+                return
 
         # 判断是图片编辑还是图片生成
         if image_base64_list:
