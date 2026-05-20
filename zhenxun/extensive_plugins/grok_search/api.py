@@ -122,17 +122,14 @@ class GrokClient:
         if usage:
             total_tokens = usage.get("total_tokens", 0)
 
-        response_text = ""
-        response_images = []
+        response_text = self._extract_response_text(result)
+        response_images = self._extract_image_urls(response_text)
 
-        choices = result.get("choices", [])
-        if choices:
-            choice = choices[0]
-            message = choice.get("message", {})
-            response_text = self._extract_text_content(message.get("content", ""))
-
-            # 检查是否有图片 URL
-            response_images = self._extract_image_urls(response_text)
+        if not response_text and not response_images:
+            logger.warning(
+                f"Grok 返回空内容: finish_reason={self._extract_finish_reason(result)}, "
+                f"usage={usage}"
+            )
 
         return GrokResponse(
             text=response_text,
@@ -245,10 +242,74 @@ class GrokClient:
         }
 
     @staticmethod
+    def _extract_finish_reason(result: dict[str, Any]) -> str:
+        """提取 finish_reason，便于排查空响应。"""
+        choices = result.get("choices")
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+            reason = choices[0].get("finish_reason")
+            return str(reason) if reason is not None else ""
+        return ""
+
+    @staticmethod
+    def _extract_response_text(result: dict[str, Any]) -> str:
+        """从 Chat Completions / Responses 风格响应中提取文本。"""
+        choices = result.get("choices")
+        if isinstance(choices, list) and choices:
+            choice = choices[0]
+            if isinstance(choice, dict):
+                text = GrokClient._extract_choice_text(choice)
+                if text:
+                    return text
+
+        output_text = result.get("output_text")
+        if isinstance(output_text, str) and output_text.strip():
+            return output_text.strip()
+
+        output = result.get("output")
+        if isinstance(output, list):
+            parts: list[str] = []
+            for item in output:
+                if not isinstance(item, dict):
+                    continue
+                content = item.get("content")
+                text = GrokClient._extract_text_content(content)
+                if text:
+                    parts.append(text)
+            return "".join(parts).strip()
+
+        return ""
+
+    @staticmethod
+    def _extract_choice_text(choice: dict[str, Any]) -> str:
+        """从单个 choice 中提取文本，兼容 content/reasoning 字段。"""
+        message = choice.get("message")
+        if isinstance(message, dict):
+            for key in ("content", "reasoning_content", "reasoning", "refusal"):
+                text = GrokClient._extract_text_content(message.get(key))
+                if text:
+                    return text.strip()
+
+        delta = choice.get("delta")
+        if isinstance(delta, dict):
+            for key in ("content", "reasoning_content", "reasoning"):
+                text = GrokClient._extract_text_content(delta.get(key))
+                if text:
+                    return text.strip()
+
+        return ""
+
+    @staticmethod
     def _extract_text_content(content: Any) -> str:
         """兼容字符串和多段结构化 content，统一提取为文本"""
         if isinstance(content, str):
-            return content
+            return content.strip()
+
+        if isinstance(content, dict):
+            for key in ("text", "output_text", "content"):
+                value = content.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            return ""
 
         if isinstance(content, list):
             parts: list[str] = []
@@ -260,7 +321,10 @@ class GrokClient:
                     continue
                 if isinstance(item.get("text"), str):
                     parts.append(item["text"])
-            return "".join(parts)
+                    continue
+                if isinstance(item.get("output_text"), str):
+                    parts.append(item["output_text"])
+            return "".join(parts).strip()
 
         return ""
 

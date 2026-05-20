@@ -332,6 +332,9 @@ def build_response_message(
     for url in response.image_urls:
         msg += MessageSegment.image(url)
 
+    if not clean_text and not response.image_urls:
+        msg += MessageSegment.text("Grok 返回为空，请稍后重试或换个问法")
+
     # 添加统计信息（使用总耗时，从命令收到开始计时）
     stats = f"\n---\n耗时 {total_duration:.2f}s"
     if response.total_tokens > 0:
