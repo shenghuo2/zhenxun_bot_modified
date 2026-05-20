@@ -286,6 +286,15 @@ def clean_response_text(text: str, image_urls: list[str]) -> str:
     """
     import re
 
+    def replace_markdown_links(match: re.Match) -> str:
+        label = match.group(1).strip()
+        url = match.group(2).strip()
+        display_label = f"[{label}]" if label.isdigit() else label
+        sources.append((display_label, url))
+        return display_label
+
+    sources: list[tuple[str, str]] = []
+
     # 如果有图片生成，移除相关的提示文本
     if image_urls:
         # 移除 "I generated images with the prompt: '...'" 这类文本
@@ -304,6 +313,25 @@ def clean_response_text(text: str, image_urls: list[str]) -> str:
             text,
             flags=re.MULTILINE | re.IGNORECASE,
         )
+
+    # QQ 不渲染 Markdown 链接，且容易把结尾的 ')' 解析进 URL。
+    # 将 [1](url) / [[1]](url) 改为正文 [1] + 文末单独来源行。
+    text = re.sub(
+        r"(?<!!)\[{1,2}([^\[\]]+)\]{1,2}\((https?://[^\s)]+)\)",
+        replace_markdown_links,
+        text,
+    )
+
+    if sources:
+        source_lines = []
+        seen_urls = set()
+        for label, url in sources:
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            source_lines.append(f"{label} {url}")
+        if source_lines:
+            text = f"{text.rstrip()}\n\n来源：\n" + "\n".join(source_lines)
 
     # 清理多余的空行
     text = re.sub(r"\n{3,}", "\n\n", text)
