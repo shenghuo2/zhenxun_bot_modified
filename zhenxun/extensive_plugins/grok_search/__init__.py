@@ -270,6 +270,16 @@ async def download_images_to_base64(image_urls: list[str]) -> list[str]:
     return base64_list
 
 
+async def try_set_msg_emoji_like(bot: Bot, event: MessageEvent) -> None:
+    """给触发消息添加回应表情，失败时忽略。"""
+    try:
+        await bot.call_api(
+            "set_msg_emoji_like", message_id=event.message_id, emoji_id="282"
+        )
+    except Exception:
+        pass
+
+
 def clean_response_text(text: str, image_urls: list[str]) -> str:
     """
     清理响应文本，移除图片生成相关的提示信息
@@ -362,6 +372,8 @@ async def handle_grok_search(bot: Bot, event: MessageEvent):
             )
         )
         return
+
+    await try_set_msg_emoji_like(bot, event)
 
     try:
         # 下载图片并转换为 base64
@@ -541,6 +553,8 @@ async def handle_grok_edit_image(bot: Bot, event: MessageEvent):
             )
         )
         return
+
+    await try_set_msg_emoji_like(bot, event)
 
     try:
         # 下载图片并转换为 base64
