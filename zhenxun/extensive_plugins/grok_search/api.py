@@ -98,6 +98,11 @@ class GrokClient:
             "messages": messages,
         }
 
+        logger.info(
+            f"Grok API 请求: model={self.model}, multimodal={bool(image_base64_list)}, "
+            f"image_count={len(image_base64_list or [])}"
+        )
+
         start_time = time.time()
 
         async with httpx.AsyncClient(timeout=120.0) as client:

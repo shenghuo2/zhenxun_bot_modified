@@ -146,6 +146,16 @@ async def extract_message_content(bot: Bot, message: Message) -> tuple[str, list
         elif seg.type == "text":
             text = seg.data.get("text", "")
             if text:
+                if "[CQ:" in text:
+                    parsed_message = Message(text)
+                    if any(parsed_seg.type != "text" for parsed_seg in parsed_message):
+                        parsed_text, parsed_images = await extract_message_content(
+                            bot, parsed_message
+                        )
+                        if parsed_text:
+                            text_parts.append(parsed_text)
+                        image_urls.extend(parsed_images)
+                        continue
                 text_parts.append(text)
 
     return "".join(text_parts).strip(), image_urls
@@ -387,12 +397,26 @@ async def handle_grok_search(bot: Bot, event: MessageEvent):
     reply_text, _ = await extract_reply_content(bot, event)
     image_urls = await extract_images_from_event(bot, event)
 
+    logger.info(
+        f"Grok 搜索输入: query={query[:80]!r}, reply_text_len={len(reply_text)}, "
+        f"image_count={len(image_urls)}"
+    )
+
     # 如果有回复文本，将它作为上下文；用户额外输入的问题作为任务
     if reply_text:
         if query:
-            query = f"请根据以下内容回答问题。\n内容：{reply_text}\n问题：{query}"
+            if image_urls:
+                query = (
+                    "请结合附带图片和以下文本内容回答问题。\n"
+                    f"文本内容：{reply_text}\n问题：{query}"
+                )
+            else:
+                query = f"请根据以下内容回答问题。\n内容：{reply_text}\n问题：{query}"
         else:
-            query = f"关于以下内容：{reply_text}"
+            if image_urls:
+                query = f"请结合附带图片说明以下内容：{reply_text}"
+            else:
+                query = f"关于以下内容：{reply_text}"
 
     # 检查是否有有效输入
     if not query and not image_urls:
@@ -411,6 +435,10 @@ async def handle_grok_search(bot: Bot, event: MessageEvent):
         image_base64_list = []
         if image_urls:
             image_base64_list = await download_images_to_base64(image_urls)
+            logger.info(
+                f"Grok 搜索图片处理: url_count={len(image_urls)}, "
+                f"base64_count={len(image_base64_list)}"
+            )
             if not image_base64_list and image_urls:
                 await _grok_matcher.finish(
                     Message(
