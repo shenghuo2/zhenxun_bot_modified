@@ -3,9 +3,8 @@ GPT-Image-2 API 客户端
 支持 txt2img (/images/generations) 和 img2img (/images/edits)
 """
 
-import base64
-import time
 from dataclasses import dataclass, field
+import time
 from typing import Any
 
 import httpx
@@ -64,7 +63,9 @@ class GPTImageClient:
         if "error" in data:
             raise Exception(f"[{self.name}] API 错误: {data['error']}")
 
-        images, total_tokens, prompt_tokens, completion_tokens = self._parse_response(data)
+        images, total_tokens, prompt_tokens, completion_tokens = self._parse_response(
+            data
+        )
         return ImageGenerationResult(
             images=images,
             total_tokens=total_tokens,
@@ -118,7 +119,9 @@ class GPTImageClient:
         if "error" in data:
             raise Exception(f"[{self.name}] API 错误: {data['error']}")
 
-        images, total_tokens, prompt_tokens, completion_tokens = self._parse_response(data)
+        images, total_tokens, prompt_tokens, completion_tokens = self._parse_response(
+            data
+        )
         return ImageGenerationResult(
             images=images,
             total_tokens=total_tokens,
@@ -136,8 +139,10 @@ class GPTImageClient:
         usage = data.get("usage", {})
         if usage:
             total_tokens = usage.get("total_tokens", 0)
-            prompt_tokens = usage.get("prompt_tokens", 0)
-            completion_tokens = usage.get("completion_tokens", 0)
+            prompt_tokens = usage.get("prompt_tokens", usage.get("input_tokens", 0))
+            completion_tokens = usage.get(
+                "completion_tokens", usage.get("output_tokens", 0)
+            )
 
         for item in data.get("data", []):
             b64 = item.get("b64_json")

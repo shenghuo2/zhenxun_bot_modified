@@ -19,7 +19,6 @@ from nonebot.adapters.onebot.v11 import (
     MessageEvent,
     MessageSegment,
 )
-from nonebot.exception import FinishedException
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
 
@@ -48,7 +47,6 @@ from .config import (
     PROVIDERS,
     QUALITY_VALUES,
     REGULAR_RETRY_CHAIN,
-    REQUEST_TIMEOUT,
     SIZE_PRESETS,
     SUPERUSER_RETRY_CHAIN,
 )
@@ -111,6 +109,11 @@ def set_cooldown(user_id: str, duration: float) -> None:
     _user_cooldowns[user_id] = time.time() + duration
 
 
+def set_cooldown_until(user_id: str, end_time: float) -> None:
+    """设置冷却结束时间 (绝对时间戳)"""
+    _user_cooldowns[user_id] = end_time
+
+
 def strip_command(text: str) -> str:
     """去除命令前缀, 返回剩余文本"""
     for prefix in ("#gpt改图", "#GPT改图", "大gpt", "大GPT"):
@@ -125,7 +128,8 @@ def parse_command_args(text: str) -> dict:
     """
     解析命令参数, 从前面截断, 防止从提示词中误匹配.
     支持:
-      --size=1k|2k  --ratio=16:9  --count=2  --quality=high  --provider=yunwu  -p=clawnode
+      --size=1k|2k  --ratio=16:9  --count=2  --quality=high
+      --provider=yunwu  -p=clawnode
       简写: 1k 2k  16:9  2 3  low medium high max
     返回 {"prompt", "size_key", "ratio_key", "count", "quality_key", "provider"}
     """
@@ -411,7 +415,9 @@ async def execute_retry_chain(
                     p_dur = time.time() - p_start
                     err_str = truncate_error(str(e), 100)
                     errors.append(f"{provider_name}({p_dur:.0f}s): {err_str}")
-                    logger.warning(f"供应商 {provider_name} 失败(耗时{p_dur:.0f}s): {err_str}")
+                    logger.warning(
+                        f"供应商 {provider_name} 失败(耗时{p_dur:.0f}s): {err_str}"
+                    )
             raise RuntimeError("所有供应商均失败: " + "; ".join(errors))
 
         chain_task = asyncio.ensure_future(run_chain())
@@ -483,7 +489,9 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
             await _gpt_image.finish(
                 Message(
                     MessageSegment.reply(event.message_id)
-                    + MessageSegment.text(f"已为 {target_qq} 添加 1 次，当前永久次数余额 {new_balance}")
+                    + MessageSegment.text(
+                        f"已为 {target_qq} 添加 1 次，当前永久次数余额 {new_balance}"
+                    )
                 )
             )
         else:
@@ -510,7 +518,9 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
             await _gpt_image.finish(
                 Message(
                     MessageSegment.reply(event.message_id)
-                    + MessageSegment.text("你的上一张图还在生成中，请等待完成后再次使用~")
+                    + MessageSegment.text(
+                        "你的上一张图还在生成中，请等待完成后再次使用~"
+                    )
                 )
             )
             return
@@ -671,7 +681,7 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
             _user_generating.pop(user_id, None)
             total_duration = time.time() - start_time
             if success:
-                set_cooldown(user_id, total_duration + COOLDOWN_EXTRA_SECONDS)
+                set_cooldown_until(user_id, start_time + COOLDOWN_EXTRA_SECONDS)
             else:
                 set_cooldown(user_id, COOLDOWN_FAIL_SECONDS)
 
@@ -681,7 +691,9 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
     cost = calculate_cost(provider_cfg, result)
 
     # 只有成功才计入次数 (count 张算 count 次)
-    usage_stats = record_usage(user_id, group_id, cost * count, is_superuser=is_su, count=count)
+    usage_stats = record_usage(
+        user_id, group_id, cost * count, is_superuser=is_su, count=count
+    )
 
     # Step 12: 构建回复
     msg = Message()
@@ -702,9 +714,15 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
     stats += f"\n本次 {total_cost:.4f}￥ ({cost:.4f}×{count}, 供应商: {provider_name})"
 
     if is_su:
-        stats += f"\n[SU] 累计: {usage_stats['user_total_count']}次 / {usage_stats['user_total_cost']:.2f}￥"
+        stats += (
+            f"\n[SU] 累计: {usage_stats['user_total_count']}次 / "
+            f"{usage_stats['user_total_cost']:.2f}￥"
+        )
     else:
-        stats += f"\n个人累计: {usage_stats['user_total_count']}次 / {usage_stats['user_total_cost']:.2f}￥"
+        stats += (
+            f"\n个人累计: {usage_stats['user_total_count']}次 / "
+            f"{usage_stats['user_total_cost']:.2f}￥"
+        )
         if group_id:
             stats += (
                 f"\n群累计: {usage_stats['group_total_count']}次 / "
@@ -714,11 +732,16 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
         daily_limit = usage_stats["daily_limit"]
         free_used = usage_stats["user_daily_count"]
         perm_credits = usage_stats["permanent_credits"]
-        cd_dur = int(COOLDOWN_EXTRA_SECONDS + total_duration)
+        cooldown_remaining = max(
+            0, int(start_time + COOLDOWN_EXTRA_SECONDS - time.time())
+        )
         stats += f"\n今日免费: {free_used}/{daily_limit} | 永久次数: {perm_credits}"
         if usage_stats["used_permanent"] > 0:
             stats += f" (本次使用 {usage_stats['used_permanent']} 次永久额度)"
-        stats += f"\n冷却: {cd_dur}s (耗时{total_duration:.0f}s + {COOLDOWN_EXTRA_SECONDS}s)"
+        stats += (
+            f"\n冷却: {cooldown_remaining}s "
+            f"(从开始生成起算 {COOLDOWN_EXTRA_SECONDS}s)"
+        )
 
     # 回退警告
     if fallback_errors:
