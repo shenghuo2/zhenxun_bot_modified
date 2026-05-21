@@ -380,9 +380,10 @@ class AuthChecker:
                     """群组插件状态"""
                     if self.is_send_limit_message(plugin, sid) and not is_poke:
                         self._flmt_s.start_cd(group_id or user_id)
-                        await MessageUtils.build_message("该群未开启此功能...").send(
-                            reply_to=True
-                        )
+                        # await MessageUtils.build_message("该群未开启此功能...").send(
+                        #     reply_to=True
+                        # )
+                        logger.info("该群未开启此功能...", "AuthChecker", session=session)
                     logger.debug(
                         f"{plugin.name}({plugin.module}) 未开启此功能...",
                         "AuthChecker",
