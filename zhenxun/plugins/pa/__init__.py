@@ -3,7 +3,7 @@ from pathlib import Path
 import random
 import shutil
 
-from nonebot import on_regex
+from nonebot import on_command
 from nonebot.plugin import PluginMetadata
 from nonebot_plugin_session import EventSession
 
@@ -26,7 +26,8 @@ __plugin_meta__ = PluginMetadata(
 
 RESOURCE_PATH = IMAGE_PATH / "pa"
 
-_matcher = on_regex(r".{0,3}爬.{0,3}", priority=5, block=True)
+# _matcher = on_regex(r".{0,3}爬.{0,3}", priority=5, block=True)
+_matcher = on_command("爬", priority=5, block=True)
 
 
 @_matcher.handle()
