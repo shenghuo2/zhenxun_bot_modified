@@ -1,10 +1,29 @@
+import os
+from pathlib import Path
+
 import nonebot
+from dotenv import load_dotenv
 
 # from nonebot.adapters.discord import Adapter as DiscordAdapter
 # from nonebot.adapters.dodo import Adapter as DoDoAdapter
 # from nonebot.adapters.kaiheila import Adapter as KaiheilaAdapter
 from nonebot.adapters.onebot.v11 import Adapter as OneBotV11Adapter
 
+
+def _load_process_env() -> None:
+    """Load dotenv files into process env for libraries that read os.environ directly."""
+    root = Path(__file__).resolve().parent
+    base_env = root / ".env"
+
+    if base_env.is_file():
+        load_dotenv(base_env, override=False)
+
+    environment = os.environ.get("ENVIRONMENT", "prod")
+    env_file = root / f".env.{environment}"
+    if env_file.is_file():
+        load_dotenv(env_file, override=False)
+
+_load_process_env()
 nonebot.init()
 
 
@@ -22,6 +41,7 @@ driver.on_shutdown(disconnect)
 # nonebot.load_builtin_plugins("echo")
 nonebot.load_plugins("zhenxun/builtin_plugins")
 nonebot.load_plugins("zhenxun/plugins")
+nonebot.load_plugins("zhenxun/extensive_plugins")
 
 
 if __name__ == "__main__":
