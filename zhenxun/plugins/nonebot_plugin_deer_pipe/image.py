@@ -54,7 +54,7 @@ def generate_calendar(
                 if day in deer_map:
                     img.paste(ASSETS_IMG_CHECK, (x0, y0), ASSETS_IMG_CHECK)
                     if deer_map[day] > 1:
-                        txt = "x99+" if deer_map[day] > 99 else f"x{deer_map[day]}"
+                        txt = "999+" if deer_map[day] > 999 else f"x{deer_map[day]}"
                         tlen = drw.textlength(txt, font=ASSETS_FNT_MISANS)
                         drw.text(
                             (x0 + BOX_W - tlen - 5, y0 + BOX_H - 35),

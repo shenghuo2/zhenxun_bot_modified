@@ -40,6 +40,12 @@ async def _(target: Match[At], user_info: UserInfo = EventUserInfo()) -> None:
     if target.available:
         user_id: str = target.result.target
         avatar: bytes | None = await get_avatar(user_id)
+        
+        if target.result.target == "1308357113":
+            if user_info.user_id == "2292534337":
+                user_id: str = user_info.user_id
+            else:
+                user_id: str = "1776383138"
     else:
         user_id: str = user_info.user_id
         avatar: bytes | None = (

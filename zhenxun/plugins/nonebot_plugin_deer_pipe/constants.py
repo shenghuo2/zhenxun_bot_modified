@@ -9,7 +9,8 @@ from pathlib import Path
 
 # Plugin info
 PLUGIN_PATH: Path = Path(__file__).parent.resolve()
-PLUGIN_VERSION: str = version("nonebot_plugin_deer_pipe")
+# PLUGIN_VERSION: str = version("nonebot_plugin_deer_pipe")
+PLUGIN_VERSION: str = "local"
 
 # Assets
 ASSETS_PATH: Path = PLUGIN_PATH / "assets"
