@@ -318,9 +318,12 @@ async def _get_up_status(id_: int) -> list:
     except ResponseCodeError as msg:
         logger.warning(f"Id：{id_} 获取信息失败...{msg}")
     latest_video_created = ""
-    if video_info["list"].get("vlist"):
-        video = video_info["list"]["vlist"][0]
-        latest_video_created = video.get("created", "")
+    try:
+        if video_info["list"].get("vlist"):
+            video = video_info["list"]["vlist"][0]
+            latest_video_created = video.get("created", "")
+    except Exception as e:
+        logger.error(f"获取视频信息发生预料之外的错误 id_：{id_} {type(e)}：{e}, 视频信息：{video_info}")
     msg_list = []
     if dynamic_img and _user.dynamic_upload_time < dynamic_upload_time:
         await BilibiliSub.sub_handle(id_, dynamic_upload_time=dynamic_upload_time)

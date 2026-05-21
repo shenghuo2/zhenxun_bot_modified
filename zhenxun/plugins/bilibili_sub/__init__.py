@@ -1,7 +1,6 @@
 from io import BytesIO
 import time
 
-from arclet.alconna.typing import CommandMeta
 from bilireq.login import Login
 import nonebot
 from nonebot.adapters.onebot.v11 import Bot
@@ -113,9 +112,8 @@ add_sub = on_alconna(
     Alconna(
         "添加订阅",
         Args["sub_type", str]["sub_msg", str],
-        meta=CommandMeta(compact=True),
     ),
-    aliases={"d", "添加订阅"},
+    aliases={"添加订阅"},
     priority=5,
     block=True,
 )
@@ -123,9 +121,8 @@ del_sub = on_alconna(
     Alconna(
         "删除订阅",
         Args["sub_type", str]["sub_msg", str],
-        meta=CommandMeta(compact=True),
     ),
-    aliases={"td", "取消订阅"},
+    aliases={"取消订阅"},
     priority=5,
     block=True,
 )

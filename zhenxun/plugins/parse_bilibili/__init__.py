@@ -1,12 +1,12 @@
 import re
 import time
 
+import ujson as json
 from nonebot import on_message
 from nonebot.plugin import PluginMetadata
 from nonebot_plugin_alconna import Hyper, Image, UniMsg
 from nonebot_plugin_session import EventSession
 from nonebot_plugin_uninfo import Uninfo
-import ujson as json
 
 from zhenxun.configs.path_config import TEMP_PATH
 from zhenxun.configs.utils import PluginExtraData, RegisterConfig, Task
@@ -55,13 +55,25 @@ _matcher = on_message(priority=1, block=False, rule=_rule)
 _tmp = {}
 
 
+def _build_cooldown_key(session: EventSession, url: str) -> str:
+    if session.id3:
+        scope = f"{session.id3}:{session.id2}"
+    elif session.id2:
+        scope = f"{session.id2}"
+    elif session.id1:
+        scope = f"private:{session.id1}"
+    else:
+        scope = "global"
+    return f"{scope}:{url}"
+
+
 @_matcher.handle()
 async def _(session: EventSession, message: UniMsg):
     # if isinstance(session, MessageEvent):
     # group_id =  session.group_id   # 获取群组 ID
     # if isinstance(session.event, MessageEvent):
-        # 获取群组 ID
-    
+    # 获取群组 ID
+    group_id = session.id3 or session.id2
     information_container = InformationContainer()
     # 判断文本消息内容是否相关
     match = None
@@ -92,7 +104,7 @@ async def _(session: EventSession, message: UniMsg):
     elif msg := message.extract_plain_text():
         # 消息中含有视频号
         if "bv" in msg.lower() or "av" in msg.lower():
-            match = re.search(r"((?=(?:bv|av))([A-Za-z0-9]+))", msg, re.IGNORECASE)
+            match = re.search(r"(BV[A-Za-z0-9]+|av\d+)", msg, re.IGNORECASE)
             vd_flag = True
 
         # 消息中含有b23的链接，包括视频、专栏、动态、直播
@@ -116,6 +128,8 @@ async def _(session: EventSession, message: UniMsg):
         if vd_flag:
             number = match.group(1)
             get_url = f"https://www.bilibili.com/video/{number}"
+            if group_id == "555741990555741990":  # 原555741990
+                return
         else:
             get_url = match.group()
 
@@ -125,11 +139,12 @@ async def _(session: EventSession, message: UniMsg):
         # 设定时间阈值，阈值之下不会解析重复内容
         repet_second = 300
         if data.vd_info:
+            cooldown_key = _build_cooldown_key(session, data.vd_url)
             # 判断一定时间内是否解析重复内容，或者是第一次解析
             if (
-                data.vd_url in _tmp.keys()
-                and time.time() - _tmp[data.vd_url] > repet_second
-            ) or data.vd_url not in _tmp.keys():
+                cooldown_key in _tmp.keys()
+                and time.time() - _tmp[cooldown_key] > repet_second
+            ) or cooldown_key not in _tmp.keys():
                 pic = data.vd_info.get("pic", "")  # 封面
                 aid = data.vd_info.get("aid", "")  # av号
                 title = data.vd_info.get("title", "")  # 标题
@@ -145,32 +160,33 @@ async def _(session: EventSession, message: UniMsg):
                 logger.info(
                     f"解析bilibili转发 {data.vd_url}", "b站解析", session=session
                 )
-                _tmp[data.vd_url] = time.time()
+                _tmp[cooldown_key] = time.time()
                 _path = TEMP_PATH / f"{aid}.jpg"
                 vd_url = data.vd_url
-                group_id = session.id3 or session.id2
+
                 # if group_id is not None:
                 #     logger.info(
                 #                 f"Group ID {group_id} type:{type(group_id)}", "b站解析", session=session
                 # )
-                if group_id == "696707598":
-                    vd_url = _add_junk(vd_url)
+                if group_id == "555741990":  # 原555741990
+                    vd_url = f"https://www.bilibili.com/video/av{aid}"
                 await AsyncHttpx.download_file(pic, _path)
                 await MessageUtils.build_message(
                     [
                         _path,
-                        f"av{aid}\n标题：{title}\nUP：{author}\n上传日期：{date}\n" +
-                        f"播放：{view}，评论：{reply}，弹幕：{danmuku}\n" +
-                        f"点赞：{like}，投币：{coin}，收藏：{favorite}"+
-                        f"\n{vd_url}",
+                        f"av{aid}\n标题：{title}\nUP：{author}\n上传日期：{date}\n"
+                        + f"播放：{view}，评论：{reply}，弹幕：{danmuku}\n"
+                        + f"点赞：{like}，投币：{coin}，收藏：{favorite}"
+                        + f"\n{vd_url}",
                     ]
                 ).send()
 
         elif data.live_info:
+            cooldown_key = _build_cooldown_key(session, data.live_url)
             if (
-                data.live_url in _tmp.keys()
-                and time.time() - _tmp[data.live_url] > repet_second
-            ) or data.live_url not in _tmp.keys():
+                cooldown_key in _tmp.keys()
+                and time.time() - _tmp[cooldown_key] > repet_second
+            ) or cooldown_key not in _tmp.keys():
                 uid = data.live_info.get("uid", "")  # 主播uid
                 title = data.live_info.get("title", "")  # 直播间标题
                 description = data.live_info.get(
@@ -184,7 +200,7 @@ async def _(session: EventSession, message: UniMsg):
                 logger.info(
                     f"解析bilibili转发 {data.live_url}", "b站解析", session=session
                 )
-                _tmp[data.live_url] = time.time()
+                _tmp[cooldown_key] = time.time()
                 await MessageUtils.build_message(
                     [
                         Image(url=user_cover),
@@ -194,18 +210,20 @@ async def _(session: EventSession, message: UniMsg):
                     ]
                 ).send()
         elif data.image_info:
+            cooldown_key = _build_cooldown_key(session, data.image_url)
             if (
-                data.image_url in _tmp.keys()
-                and time.time() - _tmp[data.image_url] > repet_second
-            ) or data.image_url not in _tmp.keys():
+                cooldown_key in _tmp.keys()
+                and time.time() - _tmp[cooldown_key] > repet_second
+            ) or cooldown_key not in _tmp.keys():
                 logger.info(
                     f"解析bilibili转发 {data.image_url}", "b站解析", session=session
                 )
-                _tmp[data.image_url] = time.time()
+                _tmp[cooldown_key] = time.time()
                 await data.image_info.send()
-                
+
+
 def _add_junk(url: str) -> str:
     pos = url.find("/BV")
     if pos != -1:
-        url = url[:pos] + "/BV(隔断阻止小柒BOT再次解析)" + url[pos+3:]
+        url = url[:pos] + "/BV(隔断阻止小柒BOT再次解析)" + url[pos + 3 :]
     return url
