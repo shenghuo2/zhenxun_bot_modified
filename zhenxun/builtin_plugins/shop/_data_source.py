@@ -487,8 +487,8 @@ class ShopManage:
         for i, p in enumerate(user.props):
             if prop := uuid2goods.get(p):
                 icon = ""
-                icon_path = ICON_PATH / prop.icon
-                if icon_path.exists():
+                # 修复：检查 prop.icon 是否为 None
+                if prop.icon and (icon_path := ICON_PATH / prop.icon).exists():
                     icon = (icon_path, 33, 33)
                 data_list.append(
                     [
