@@ -1,6 +1,7 @@
 import asyncio
 import httpx
 import json
+import time
 from typing import Any, Dict, Tuple
 
 from nonebot import on_command
@@ -65,9 +66,15 @@ system_prompt = """
 """
 
 
+DOUBAO_CONNECT_TIMEOUT = 15.0
+DOUBAO_READ_TIMEOUT = 90.0
+DOUBAO_WRITE_TIMEOUT = 30.0
+DOUBAO_POOL_TIMEOUT = 30.0
+
+
 # ============ Kimi (Moonshot) ============
-async def kimi_search(query: str) -> Tuple[int, int, str]:
-    """使用 Kimi (Moonshot) 接口进行搜索，并返回 web_search 调用次数、total_tokens 与回复文本"""
+async def kimi_search(query: str) -> Tuple[int, int, float, str]:
+    """使用 Kimi (Moonshot) 接口进行搜索，并返回 web_search 调用次数、total_tokens、耗时与回复文本"""
     client = KimiClient(base_url="https://api.moonshot.cn/v1", api_key=KIMI_API_KEY)
 
     messages: list[dict[str, Any]] = [
@@ -78,6 +85,7 @@ async def kimi_search(query: str) -> Tuple[int, int, str]:
     total_tokens: int = 0
     web_search_count: int = 0
     answer_text: str = ""
+    start_time = time.time()
 
     while True:
         completion = await client.chat.completions.create(
@@ -116,12 +124,13 @@ async def kimi_search(query: str) -> Tuple[int, int, str]:
         answer_text = choice.message.content or ""
         break
 
-    return web_search_count, total_tokens, answer_text
+    duration = time.time() - start_time
+    return web_search_count, total_tokens, duration, answer_text
 
 
 # ============ Doubao (Volcengine Ark) ============
-async def doubao_search(query: str) -> Tuple[int, str]:
-    """使用 Doubao (Ark) 接口进行搜索，并返回 total_tokens 与回复文本"""
+async def doubao_search(query: str) -> Tuple[int, float, str]:
+    """使用 Doubao (Ark) 接口进行搜索，并返回 total_tokens、耗时与回复文本"""
     url = "https://ark.cn-beijing.volces.com/api/v3/responses"
     headers = {
         "Authorization": f"Bearer {ARK_API_KEY}",
@@ -154,11 +163,19 @@ async def doubao_search(query: str) -> Tuple[int, str]:
         "max_output_tokens": 16384,
     }
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    start_time = time.time()
+    timeout = httpx.Timeout(
+        connect=DOUBAO_CONNECT_TIMEOUT,
+        read=DOUBAO_READ_TIMEOUT,
+        write=DOUBAO_WRITE_TIMEOUT,
+        pool=DOUBAO_POOL_TIMEOUT,
+    )
+    async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(url, headers=headers, json=data)
         response.raise_for_status()  # 如果请求失败则抛出异常
         result = response.json()
 
+    duration = time.time() - start_time
     total_tokens = result.get("usage", {}).get("total_tokens", 0)
     output_text = ""
     for item in result.get("output", []):
@@ -173,22 +190,22 @@ async def doubao_search(query: str) -> Tuple[int, str]:
     if not output_text:
         raise ValueError("Doubao API 返回的响应中没有有效的回答文本。")
 
-    return total_tokens, output_text
+    return total_tokens, duration, output_text
 
 
 # 命令：kimi搜索
-_kimi_matcher = on_command("#高级搜索", priority=5, block=False, permission=SUPERUSER)
+_kimi_matcher = on_command("#高级搜索", aliases={"#精准搜索"}, priority=5, block=False, permission=SUPERUSER)
 
 
 @_kimi_matcher.handle()
 async def _(bot: Bot, event: MessageEvent):
     query = event.get_message().extract_plain_text().strip().replace("#高级搜索", "")
     try:
-        web_search_count, total_tokens, answer = await kimi_search(query)
+        web_search_count, total_tokens, duration, answer = await kimi_search(query)
         msg = Message(
             MessageSegment.reply(event.message_id)
             + MessageSegment.text(
-                f"{answer}\n本次调用共进行 {web_search_count} 次搜索，使用 {total_tokens} token"
+                f"{answer}\n本次调用共进行 {web_search_count} 次搜索，耗时 {duration:.2f}s，使用 {total_tokens} token"
             )
         )
         await _kimi_matcher.finish(msg)
@@ -209,20 +226,43 @@ _doubao_matcher = on_command("#搜索", priority=5, block=False)
 @_doubao_matcher.handle()
 async def _(bot: Bot, event: MessageEvent):
     query = event.get_message().extract_plain_text().strip().replace("#搜索", "")
+    if not query.strip():
+        await _doubao_matcher.finish(
+            Message(
+                MessageSegment.reply(event.message_id)
+                + MessageSegment.text("请输入要搜索的内容，例如：#搜索 今日黄金价格")
+            )
+        )
+
     try:
-        total_tokens, answer = await doubao_search(query)
+        total_tokens, duration, answer = await doubao_search(query)
         msg = Message(
             MessageSegment.reply(event.message_id)
-            + MessageSegment.text(f"{answer}\n本次调用共使用 {total_tokens} token")
+            + MessageSegment.text(f"{answer}\n本次调用耗时 {duration:.2f}s，使用 {total_tokens} token")
         )
         await _doubao_matcher.finish(msg)
     except FinishedException:
         pass
-    except httpx.ReadTimeout:
+    except httpx.TimeoutException as e:
         logger.exception(f"Doubao 调用超时，错误：{e}")
         err = Message(
             MessageSegment.reply(event.message_id)
-            + MessageSegment.text(f"调用超时，请检查后台日志。")
+            + MessageSegment.text("搜索服务响应超时，请稍后重试。")
+        )
+        await _doubao_matcher.finish(err)
+    except httpx.HTTPStatusError as e:
+        status_code = e.response.status_code if e.response else "unknown"
+        logger.exception(f"Doubao 接口返回异常状态码 {status_code}，错误：{e}")
+        err = Message(
+            MessageSegment.reply(event.message_id)
+            + MessageSegment.text(f"搜索服务返回异常状态码：{status_code}")
+        )
+        await _doubao_matcher.finish(err)
+    except httpx.RequestError as e:
+        logger.exception(f"Doubao 网络请求失败，错误：{e}")
+        err = Message(
+            MessageSegment.reply(event.message_id)
+            + MessageSegment.text("搜索服务网络请求失败，请检查网络或稍后重试。")
         )
         await _doubao_matcher.finish(err)
     except Exception as e:
