@@ -32,12 +32,12 @@ def get_time_diff_str(timestamp: datetime.datetime) -> str:
     if now_local.month != ts_local.month:
         return f"{ts_local.month}月{ts_local.day}日"
     if now_local.day != ts_local.day:
-        return f"{ts_local.day}日"
+        return f"本月{ts_local.day}日"
 
     # 同一天内
     diff = now - timestamp
     if diff.seconds >= 3600:
-        return f"{ts_local.hour}点"
+        return f"今天{ts_local.hour}点"
     if diff.seconds >= 60:
         return f"{diff.seconds // 60}分钟之前"
     if diff.seconds > 0:
@@ -55,7 +55,11 @@ def build_reply_image_seg() -> MessageSegment:
     import base64
     data = REPLY_IMAGE.read_bytes()
     b64 = base64.b64encode(data).decode()
-    return MessageSegment.image(file=f"base64://{b64}")
+    return MessageSegment("image", {
+        "file": f"base64://{b64}",
+        "sub_type": 1,
+        "summary": "[水过了]",
+    })
 
 
 def extract_file_unique(message_content: str) -> str | None:

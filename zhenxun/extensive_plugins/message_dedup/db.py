@@ -21,6 +21,7 @@ class MessageRecord(Base):
     message_id = Column(String, nullable=False, unique=True)
     message_sha256 = Column(String, nullable=False)
     group_id = Column(String, nullable=False)
+    sender_id = Column(String, nullable=True)  # 逗号分隔的发送者列表
     timestamp = Column(DateTime, default=utcnow)
     hit_count = Column(Integer, default=1, nullable=False)
 
@@ -44,6 +45,7 @@ async def init_db():
         # 对已有的旧表补充新列（SQLite ALTER TABLE）
         for col_name, col_def in [
             ("hit_count", "INTEGER DEFAULT 1"),
+            ("sender_id", "TEXT"),
         ]:
             try:
                 await conn.execute(
@@ -64,12 +66,14 @@ async def store_message(
     message_id: str,
     sha256: str,
     group_id: str,
+    sender_id: str | None = None,
     timestamp: datetime.datetime | None = None,
 ):
     record = MessageRecord(
         message_id=message_id,
         message_sha256=sha256,
         group_id=group_id,
+        sender_id=sender_id,
         timestamp=timestamp or utcnow(),
         hit_count=1,
     )
@@ -77,9 +81,17 @@ async def store_message(
     await session.commit()
 
 
-async def increment_hit_count(session: AsyncSession, record: MessageRecord) -> int:
-    """将 hit_count +1 并返回新的计数"""
+async def increment_hit_count(
+    session: AsyncSession, record: MessageRecord, sender_id: str | None = None
+) -> int:
+    """将 hit_count +1，累加发送者，并返回新的计数"""
     record.hit_count = (record.hit_count or 1) + 1
+    if sender_id:
+        if record.sender_id:
+            # 累加，用逗号分隔
+            record.sender_id = f"{record.sender_id},{sender_id}"
+        else:
+            record.sender_id = sender_id
     session.add(record)
     await session.commit()
     return record.hit_count
