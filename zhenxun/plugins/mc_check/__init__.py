@@ -1,16 +1,17 @@
-from .configs import lang_data, lang, VERSION
-from .utils import (
-    is_invalid_address,
-    get_message_list,
-    parse_host,
-    change_language_to,
-    handle_exception
-)
+from arclet.alconna import Alconna, Args
 from nonebot.plugin import PluginMetadata
-from zhenxun.configs.utils import PluginCdBlock, PluginExtraData, RegisterConfig
-from nonebot_plugin_alconna import on_alconna, Match, UniMessage, Text
-from arclet.alconna import Args, Alconna
+from nonebot_plugin_alconna import Match, Text, UniMessage, on_alconna
 
+from zhenxun.configs.utils import PluginCdBlock, PluginExtraData, RegisterConfig
+
+from .configs import VERSION, lang, lang_data
+from .utils import (
+    change_language_to,
+    get_message_list,
+    handle_exception,
+    is_invalid_address,
+    parse_host,
+)
 
 __plugin_meta__ = PluginMetadata(
     name="Minecraft查服",
@@ -92,10 +93,10 @@ async def handle_check(host: str):
     address, port = await parse_host(host)
 
     if not str(port).isdigit() or not (0 <= int(port) <= 65535):
-        await check.finish(Text(f'{lang_data[lang]["where_port"]}'), reply_to=True)
+        await check.finish(Text(f"{lang_data[lang]['where_port']}"), reply_to=True)
 
     if await is_invalid_address(address):
-        await check.finish(Text(f'{lang_data[lang]["where_ip"]}'), reply_to=True)
+        await check.finish(Text(f"{lang_data[lang]['where_ip']}"), reply_to=True)
 
     await get_info(address, port)
 
@@ -113,18 +114,21 @@ async def get_info(ip, port):
     except BaseException as e:
         await check.send(await handle_exception(e), reply_to=True)
 
+
 @lang_change.handle()
 async def _(language: str):
     if language:
         await lang_change.send(Text(await change_language_to(language)), reply_to=True)
     else:
         await lang_change.send(Text("Language?"), reply_to=True)
+
+
 @lang_now.handle()
 async def _():
-    await lang_now.send(Text(f'Language: {lang}.'), reply_to=True)
+    await lang_now.send(Text(f"Language: {lang}."), reply_to=True)
 
 
 @lang_list.handle()
 async def _():
-    i = '\n'.join(list(lang_data.keys()))
+    i = "\n".join(list(lang_data.keys()))
     await lang_list.send(Text(f"Language List:\n{i}"), reply_to=True)
