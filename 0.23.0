@@ -1,0 +1,11 @@
+Looking in indexes: https://mirrors.ustc.edu.cn/pypi/simple
+Requirement already satisfied: httpx in /home/shenghuo2/.cache/pypoetry/virtualenvs/zhenxun-bot-G4J0qAFY-py3.10/lib/python3.10/site-packages (0.23.3)
+Requirement already satisfied: certifi in /home/shenghuo2/.cache/pypoetry/virtualenvs/zhenxun-bot-G4J0qAFY-py3.10/lib/python3.10/site-packages (from httpx) (2024.12.14)
+Requirement already satisfied: httpcore<0.17.0,>=0.15.0 in /home/shenghuo2/.cache/pypoetry/virtualenvs/zhenxun-bot-G4J0qAFY-py3.10/lib/python3.10/site-packages (from httpx) (0.16.3)
+Requirement already satisfied: rfc3986<2,>=1.3 in /home/shenghuo2/.cache/pypoetry/virtualenvs/zhenxun-bot-G4J0qAFY-py3.10/lib/python3.10/site-packages (from rfc3986[idna2008]<2,>=1.3->httpx) (1.5.0)
+Requirement already satisfied: sniffio in /home/shenghuo2/.cache/pypoetry/virtualenvs/zhenxun-bot-G4J0qAFY-py3.10/lib/python3.10/site-packages (from httpx) (1.3.1)
+Requirement already satisfied: h11<0.15,>=0.13 in /home/shenghuo2/.cache/pypoetry/virtualenvs/zhenxun-bot-G4J0qAFY-py3.10/lib/python3.10/site-packages (from httpcore<0.17.0,>=0.15.0->httpx) (0.14.0)
+Requirement already satisfied: anyio<5.0,>=3.0 in /home/shenghuo2/.cache/pypoetry/virtualenvs/zhenxun-bot-G4J0qAFY-py3.10/lib/python3.10/site-packages (from httpcore<0.17.0,>=0.15.0->httpx) (4.8.0)
+Requirement already satisfied: exceptiongroup>=1.0.2 in /home/shenghuo2/.cache/pypoetry/virtualenvs/zhenxun-bot-G4J0qAFY-py3.10/lib/python3.10/site-packages (from anyio<5.0,>=3.0->httpcore<0.17.0,>=0.15.0->httpx) (1.2.2)
+Requirement already satisfied: idna>=2.8 in /home/shenghuo2/.cache/pypoetry/virtualenvs/zhenxun-bot-G4J0qAFY-py3.10/lib/python3.10/site-packages (from anyio<5.0,>=3.0->httpcore<0.17.0,>=0.15.0->httpx) (3.10)
+Requirement already satisfied: typing_extensions>=4.5 in /home/shenghuo2/.cache/pypoetry/virtualenvs/zhenxun-bot-G4J0qAFY-py3.10/lib/python3.10/site-packages (from anyio<5.0,>=3.0->httpcore<0.17.0,>=0.15.0->httpx) (4.15.0)
