@@ -52,6 +52,20 @@ LG_MESSAGE = [
     "不要熬夜啦！",
 ]
 
+WIN_MESSAGE = [
+    "哼，还算有点本事嘛~这次就算你赢了！",
+    "居然能压过真寻一次，勉强夸你一下好了。",
+    "这次手气不错嘛，真寻就暂时承认你不是杂鱼。",
+    "居然真让你赢了，少得意忘形啦！",
+]
+
+LOSE_MESSAGE = [
+    "真是杂鱼~连真寻都没比过吗？",
+    "就这点运气也想赢真寻？杂鱼杂鱼~",
+    "诶，不会吧不会吧，你真的输了呀？",
+    "连真寻的手气都压不住，果然是小杂鱼呢。",
+]
+
 
 @driver.on_startup
 async def init_image():
@@ -70,6 +84,9 @@ async def get_card(
     gift: str,
     is_double: bool = False,
     is_card_view: bool = False,
+    bot_base_score: float | None = None,
+    bot_extra_score: float = 0.0,
+    pve_win: bool | None = None,
 ) -> Path:
     """获取好感度卡片
 
@@ -89,24 +106,38 @@ async def get_card(
     await generate_progress_bar_pic()
     user_id = user.user_id
     date = datetime.now().date()
-    _type = "view" if is_card_view else "sign"
+    _type = "sign"
     file_name = f"{user_id}_{_type}_{date}.png"
-    view_name = f"{user_id}_view_{date}.png"
     card_file = Path(SIGN_TODAY_CARD_PATH) / file_name
     if card_file.exists():
         return IMAGE_PATH / "sign" / "today_card" / file_name
-    if add_impression == -1:
-        card_file = Path(SIGN_TODAY_CARD_PATH) / view_name
-        if card_file.exists():
-            return card_file
-        is_card_view = True
     return (
         await _generate_html_card(
-            user, session, nickname, add_impression, gold, gift, is_double, is_card_view
+            user,
+            session,
+            nickname,
+            add_impression,
+            gold,
+            gift,
+            is_double,
+            is_card_view,
+            bot_base_score,
+            bot_extra_score,
+            pve_win,
         )
         if base_config.get("IMAGE_STYLE") == "zhenxun"
         else await _generate_card(
-            user, session, nickname, add_impression, gold, gift, is_double, is_card_view
+            user,
+            session,
+            nickname,
+            add_impression,
+            gold,
+            gift,
+            is_double,
+            is_card_view,
+            bot_base_score,
+            bot_extra_score,
+            pve_win,
         )
     )
 
@@ -120,6 +151,9 @@ async def _generate_card(
     gift: str,
     is_double: bool = False,
     is_card_view: bool = False,
+    bot_base_score: float | None = None,
+    bot_extra_score: float = 0.0,
+    pve_win: bool | None = None,
 ) -> Path:
     """生成签到卡片
 
@@ -261,7 +295,7 @@ async def _generate_card(
             f"色图概率：{setu_prob:.2f}%",
         )
         await today_data.text((0, 75), f"开箱次数：{(20 + int(user.impression / 3))}")
-        _type = "view"
+        _type = "sign"
     else:
         await A.paste(gift_border, (570, 140))
         today_sign_text_img = await BuildImage.build_text_image("今日签到", size=30)
@@ -270,6 +304,12 @@ async def _generate_card(
         else:
             await today_data.text((0, 0), f"好感度 + {add_impression:.2f}")
         await today_data.text((0, 25), f"金币 + {gold}")
+        if bot_base_score is not None and pve_win is not None:
+            bot_total_score = bot_base_score + bot_extra_score
+            await today_data.text(
+                (0, 50),
+                f"真寻手气 {bot_total_score:.2f}",
+            )
         _type = "sign"
     current_date = datetime.now()
     current_datetime_str = current_date.strftime("%Y-%m-%d %a %H:%M:%S")
@@ -391,6 +431,9 @@ async def _generate_html_card(
     gift: str,
     is_double: bool = False,
     is_card_view: bool = False,
+    bot_base_score: float | None = None,
+    bot_extra_score: float = 0.0,
+    pve_win: bool | None = None,
 ) -> Path:
     """生成签到卡片
 
@@ -447,12 +490,15 @@ async def _generate_html_card(
         "process": process * 100,
         "date": str(now.replace(microsecond=0)),
         "font_size": 45,
+        "show_pve": False,
+        "bot_pve": "",
+        "pve_result": "",
     }
     if len(nickname) > 6:
         data["font_size"] = 27
     _type = "sign"
     if is_card_view:
-        _type = "view"
+        _type = "sign"
         value_list = (
             await SignUser.annotate()
             .order_by("-impression")
@@ -462,6 +508,17 @@ async def _generate_html_card(
         data["impression"] = f"好感度排名第 {index} 位"
         data["gold"] = f"总金币：{gold}"
         data["gift"] = ""
+        if bot_base_score is not None and pve_win is not None:
+            bot_total_score = bot_base_score + bot_extra_score
+            message = random.choice(WIN_MESSAGE if pve_win else LOSE_MESSAGE)
+            data["show_pve"] = True
+            data["bot_pve"] = f"真寻手气 {bot_total_score:.2f}"
+    elif bot_base_score is not None and pve_win is not None:
+        bot_total_score = bot_base_score + bot_extra_score
+        message = random.choice(WIN_MESSAGE if pve_win else LOSE_MESSAGE)
+        data["show_pve"] = True
+        data["bot_pve"] = f"真寻手气 {bot_total_score:.2f}"
+    data["message"] = f"{BotConfig.self_nickname}说: {message}"
     pic = await template_to_pic(
         template_path=str((TEMPLATE_PATH / "sign").absolute()),
         template_name="main.html",

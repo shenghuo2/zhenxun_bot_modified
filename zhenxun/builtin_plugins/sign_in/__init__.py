@@ -201,7 +201,7 @@ async def _(session: Uninfo, arparma: Arparma, nickname: str = UserName()):
             await MessageUtils.build_message(
                 f"你只能使用以下命令签到：{'、'.join(allowed_aliases)}".replace("傻逼",'**（已过滤）')
             ).finish()
-    if user_id == "1184474159" or user_id == "1308357113":
+    if user_id == "1184474159":
         allowed_aliases = ["吱吱艾草", "zzac"]
         logger.info("origin",arparma.origin)
         logger.info("header_match",arparma.header_match)

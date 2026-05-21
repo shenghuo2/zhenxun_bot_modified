@@ -11,6 +11,7 @@ from zhenxun.models.friend_user import FriendUser
 from zhenxun.models.group_member_info import GroupInfoUser
 from zhenxun.models.sign_log import SignLog
 from zhenxun.models.sign_user import SignUser
+from zhenxun.models.user_gold_log import UserGoldLog
 from zhenxun.models.user_console import UserConsole
 from zhenxun.services.log import logger
 from zhenxun.utils.image_utils import BuildImage, ImageTemplate
@@ -28,8 +29,90 @@ PLATFORM_PATH = {
     "qq": ICON_PATH / "qq.png",
 }
 
+BOT_PVE_LOG_PREFIX = "__bot_sign_pve__"
+BOT_PVE_BONUS_PREFIX = "pve_bonus:"
+
 
 class SignManage:
+    @classmethod
+    def _get_bot_pve_log_user_id(cls, session: Uninfo) -> str:
+        platform = PlatformUtils.get_platform(session)
+        return f"{BOT_PVE_LOG_PREFIX}:{platform}:{session.self_id}"
+
+    @classmethod
+    def _get_bot_pve_bonus(cls, log: SignLog) -> float:
+        if not log.bot_id or not log.bot_id.startswith(BOT_PVE_BONUS_PREFIX):
+            return 0.0
+        try:
+            return float(log.bot_id.removeprefix(BOT_PVE_BONUS_PREFIX))
+        except ValueError:
+            return 0.0
+
+    @classmethod
+    async def _get_today_bot_pve(cls, session: Uninfo) -> tuple[float, float, float]:
+        now = datetime.now(pytz.timezone("Asia/Shanghai"))
+        platform = PlatformUtils.get_platform(session)
+        user_id = cls._get_bot_pve_log_user_id(session)
+        pve_log = await SignLog.filter(user_id=user_id, platform=platform).order_by(
+            "-create_time"
+        ).first()
+        if pve_log and pve_log.create_time.astimezone(
+            pytz.timezone("Asia/Shanghai")
+        ).date() == now.date():
+            base_score = float(pve_log.impression)
+            extra_score = cls._get_bot_pve_bonus(pve_log)
+            return base_score, extra_score, base_score + extra_score
+
+        base_score = (secrets.randbelow(99) + 1) / 100
+        extra_score = round(random.uniform(0, 0.25), 3)
+        await SignLog.create(
+            user_id=user_id,
+            impression=base_score,
+            bot_id=f"{BOT_PVE_BONUS_PREFIX}{extra_score:.3f}",
+            platform=platform,
+        )
+        logger.info(
+            f"生成 bot 本日签到 PVE 值. base: {base_score:.2f}, extra: {extra_score:.2f}",
+            "签到",
+            session=session,
+        )
+        return base_score, extra_score, base_score + extra_score
+
+    @classmethod
+    async def _get_today_sign_result(
+        cls, user: SignUser, session: Uninfo
+    ) -> tuple[float | None, float, bool | None, float | None, int | None]:
+        now = datetime.now(pytz.timezone("Asia/Shanghai"))
+        today_log = await SignLog.filter(user_id=user.user_id).order_by("-create_time").first()
+        if not today_log:
+            return None, 0.0, None, None, None
+        if (
+            today_log.create_time.astimezone(pytz.timezone("Asia/Shanghai")).date()
+            != now.date()
+        ):
+            return None, 0.0, None, None, None
+
+        today_gold_log = await UserGoldLog.filter(
+            user_id=user.user_id, source="sign_in"
+        ).order_by("-create_time").first()
+        today_gold = None
+        if today_gold_log and (
+            today_gold_log.create_time.astimezone(pytz.timezone("Asia/Shanghai")).date()
+            == now.date()
+        ):
+            today_gold = today_gold_log.gold
+
+        bot_base_score, bot_extra_score, bot_total_score = await cls._get_today_bot_pve(
+            session
+        )
+        return (
+            bot_base_score,
+            bot_extra_score,
+            float(today_log.impression) > bot_total_score,
+            float(today_log.impression),
+            today_gold,
+        )
+
     @classmethod
     async def rank(
         cls, session: Uninfo, num: int, group_id: str | None = None
@@ -132,14 +215,20 @@ class SignManage:
             ).date()
         if not is_card_view and (not new_log or (log_time and log_time != now.date())):
             return await cls._handle_sign_in(user, nickname, session)
+        bot_base_score, bot_extra_score, pve_win, add_impression, gold = (
+            await cls._get_today_sign_result(user, session)
+        )
         return await get_card(
             user,
             session,
             nickname,
-            -1,
-            user_console.gold,
+            add_impression or -1,
+            gold,
             "",
-            is_card_view=is_card_view,
+            is_card_view=False,
+            bot_base_score=bot_base_score,
+            bot_extra_score=bot_extra_score,
+            pve_win=pve_win,
         )
 
     @classmethod
@@ -166,6 +255,10 @@ class SignManage:
         specify_probability = user.specify_probability
         if rand + add_probability > 0.97 or rand < specify_probability:
             impression_added *= 2
+        bot_base_score, bot_extra_score, bot_total_score = await cls._get_today_bot_pve(
+            session
+        )
+        pve_win = impression_added > bot_total_score
         await SignUser.sign(user, impression_added, session.self_id, platform)
         gold = random.randint(1, 100)
         gift = random_event(float(user.impression))
@@ -179,7 +272,9 @@ class SignManage:
             gift += " + 1"
         logger.info(
             f"签到成功. score: {user.impression:.2f} "
-            f"(+{impression_added:.2f}).获取金币/道具: {gold}",
+            f"(+{impression_added:.2f}).获取金币/道具: {gold}. "
+            f"对决结果: {'win' if pve_win else 'lose'} vs {bot_total_score:.2f} "
+            f"(base {bot_base_score:.2f} + {bot_extra_score:.2f})",
             "签到",
             session=session,
         )
@@ -191,4 +286,7 @@ class SignManage:
             gold,
             gift,
             rand + add_probability > 0.97 or rand < specify_probability,
+            bot_base_score=bot_base_score,
+            bot_extra_score=bot_extra_score,
+            pve_win=pve_win,
         )
