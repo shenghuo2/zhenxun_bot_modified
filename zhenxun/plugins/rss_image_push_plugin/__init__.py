@@ -11,24 +11,24 @@ from .data_source import parse_rss, extract_image_urls, get_new_entries_GUID, ge
 target_group_id = 787599185  # 目标群聊ID
 
 # 定义定时任务，每分钟检查一次RSS更新
-@scheduler.scheduled_job("interval", minutes=5)
+# @scheduler.scheduled_job("interval", minutes=5)
 
-async def rss_image_forward_job():
-    logger.info("Checking for RSS updates...","rss_pix_push")
-    try:
-        anning_entries = parse_rss(rss_anning_url)  # 获取anning RSS条目
-        ManyACG_entries = parse_rss(ManyACG_RSS)  # 获取ManyACG RSS条目
-        anning_new_entries = get_new_entries_GUID(anning_entries)  # 获取新的条目
-        ManyACG_new_entries = get_new_entries_ID(ManyACG_entries)  # 获取新的条目
-        # logger.info(str(ManyACG_new_entries),"rss_pix_push")
-        if anning_new_entries:
-            await send_image_to_group(anning_new_entries)  # 发送新的图片到群聊
-        if ManyACG_new_entries:
-            await send_image_to_group(ManyACG_new_entries)  # 发送新的图片到群聊
-        if anning_new_entries == [] and ManyACG_new_entries == []:
-            logger.info("No new RSS entries available.")
-    except Exception as e:
-        logger.error(f"检查RSS更新失败: {e}")
+# async def rss_image_forward_job():
+#     logger.info("Checking for RSS updates...","rss_pix_push")
+#     try:
+#         # anning_entries = parse_rss(rss_anning_url)  # 获取anning RSS条目
+#         ManyACG_entries = parse_rss(ManyACG_RSS)  # 获取ManyACG RSS条目
+#         # anning_new_entries = get_new_entries_GUID(anning_entries)  # 获取新的条目
+#         ManyACG_new_entries = get_new_entries_ID(ManyACG_entries)  # 获取新的条目
+#         # logger.info(str(ManyACG_new_entries),"rss_pix_push")
+#         # if anning_new_entries:
+#             # await send_image_to_group(anning_new_entries)  # 发送新的图片到群聊
+#         if ManyACG_new_entries:
+#             await send_image_to_group(ManyACG_new_entries)  # 发送新的图片到群聊
+#         # if anning_new_entries == [] and ManyACG_new_entries == []:
+#         #     logger.info("No new RSS entries available.")
+#     except Exception as e:
+#         logger.error(f"检查RSS更新失败: {e}")
 
 
 async def send_image_to_group(new_entries):
@@ -61,7 +61,7 @@ async def send_image_to_group(new_entries):
                     logger.info(f"图片转发成功: {image_url}")
                 except Exception as e:
                     logger.error(f"发送图片时出错: {e}")
-                    await bot.send_group_msg(group_id=target_group_id, message=f"发送图片时出错，这是图片的URL:{image_url}")
+                    # await bot.send_group_msg(group_id=target_group_id, message=f"发送图片时出错，这是图片的URL:{image_url}")
         else:
             logger.warning(f"No images found in the new RSS entry: {entry.title}")
 
