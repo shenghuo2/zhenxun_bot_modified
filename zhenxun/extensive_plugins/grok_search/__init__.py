@@ -7,9 +7,9 @@ Grok 搜索插件
 import time
 from typing import Any
 
-from nonebot import on_command, on_message
-from nonebot.adapters.onebot.v11 import (Bot, Message, MessageEvent,
-                                         MessageSegment)
+from nonebot import get_driver, on_command, on_message
+from nonebot.adapters.onebot.v11 import (Bot, GroupMessageEvent, Message,
+                                         MessageEvent, MessageSegment)
 from nonebot.exception import FinishedException
 from nonebot.log import logger
 from nonebot.permission import SUPERUSER
@@ -100,6 +100,10 @@ _grok_edit_image = on_command("#g改图", priority=5, block=True)
 # 向后兼容，保留 #g设置 命令
 _grok_set_model = on_command("#g设置", priority=5, block=True, permission=SUPERUSER)
 
+SEARCH_COOLDOWN_SECONDS = 10
+_group_search_cooldowns: dict[str, float] = {}
+_user_search_cooldowns: dict[str, float] = {}
+
 
 # Grok 搜索的系统提示词
 GROK_SEARCH_PROMPT = """你是一个简洁的搜索小助手，请遵守以下规则：
@@ -109,6 +113,45 @@ GROK_SEARCH_PROMPT = """你是一个简洁的搜索小助手，请遵守以下�
 4. 使用中文回答
 5. 直接回答问题，不要废话
 """
+
+
+def is_superuser(event: MessageEvent) -> bool:
+    """判断是否为超级用户。"""
+    try:
+        return str(event.user_id) in get_driver().config.superusers
+    except Exception:
+        return False
+
+
+def get_search_cooldown(event: MessageEvent) -> tuple[str | None, int]:
+    """获取搜索冷却命中原因和剩余秒数。"""
+    if is_superuser(event):
+        return None, 0
+
+    now = time.time()
+    user_key = str(event.user_id)
+    user_remaining = int(_user_search_cooldowns.get(user_key, 0) - now)
+    if user_remaining > 0:
+        return "用户", user_remaining
+
+    if isinstance(event, GroupMessageEvent):
+        group_key = str(event.group_id)
+        group_remaining = int(_group_search_cooldowns.get(group_key, 0) - now)
+        if group_remaining > 0:
+            return "本群", group_remaining
+
+    return None, 0
+
+
+def set_search_cooldown(event: MessageEvent) -> None:
+    """设置搜索冷却。"""
+    if is_superuser(event):
+        return
+
+    cooldown_end = time.time() + SEARCH_COOLDOWN_SECONDS
+    _user_search_cooldowns[str(event.user_id)] = cooldown_end
+    if isinstance(event, GroupMessageEvent):
+        _group_search_cooldowns[str(event.group_id)] = cooldown_end
 
 
 async def resolve_image_url(bot: Bot, seg: MessageSegment) -> str | None:
@@ -427,6 +470,18 @@ async def handle_grok_search(bot: Bot, event: MessageEvent):
             )
         )
         return
+
+    cooldown_scope, remaining = get_search_cooldown(event)
+    if cooldown_scope:
+        await _grok_matcher.finish(
+            Message(
+                MessageSegment.reply(event.message_id)
+                + MessageSegment.text(f"{cooldown_scope}搜索冷却中，请 {remaining}s 后再试")
+            )
+        )
+        return
+
+    set_search_cooldown(event)
 
     await try_set_msg_emoji_like(bot, event)
 
