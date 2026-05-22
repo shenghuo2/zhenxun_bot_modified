@@ -109,11 +109,6 @@ def set_cooldown(user_id: str, duration: float) -> None:
     _user_cooldowns[user_id] = time.time() + duration
 
 
-def set_cooldown_until(user_id: str, end_time: float) -> None:
-    """设置冷却结束时间 (绝对时间戳)"""
-    _user_cooldowns[user_id] = end_time
-
-
 def strip_command(text: str) -> str:
     """去除命令前缀, 返回剩余文本"""
     for prefix in ("#gpt改图", "#GPT改图", "大gpt", "大GPT"):
@@ -570,9 +565,6 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
                 )
             )
             return
-        # 标记生成中 (阻止并发)
-        _user_generating[user_id] = True
-
     # Step 6: 提取图片
     image_urls = extract_images(event)
 
@@ -627,6 +619,20 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
         )
         return
 
+    # 普通用户在真正开始生成前二次检查并加锁，避免并发调用生成 API。
+    if not is_su:
+        if _user_generating.get(user_id):
+            await _gpt_image.finish(
+                Message(
+                    MessageSegment.reply(event.message_id)
+                    + MessageSegment.text(
+                        "你的上一张图还在生成中，请等待完成后再次使用~"
+                    )
+                )
+            )
+            return
+        _user_generating[user_id] = True
+
     # Step 10: 注册撤回检测
     cancel_event = asyncio.Event()
     msg_id_str = str(event.message_id)
@@ -679,9 +685,8 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
         _active_requests.pop(msg_id_str, None)
         if not is_su:
             _user_generating.pop(user_id, None)
-            total_duration = time.time() - start_time
             if success:
-                set_cooldown_until(user_id, start_time + COOLDOWN_EXTRA_SECONDS)
+                set_cooldown(user_id, COOLDOWN_EXTRA_SECONDS)
             else:
                 set_cooldown(user_id, COOLDOWN_FAIL_SECONDS)
 
@@ -732,16 +737,10 @@ async def handle_gpt_image(bot: Bot, event: MessageEvent):
         daily_limit = usage_stats["daily_limit"]
         free_used = usage_stats["user_daily_count"]
         perm_credits = usage_stats["permanent_credits"]
-        cooldown_remaining = max(
-            0, int(start_time + COOLDOWN_EXTRA_SECONDS - time.time())
-        )
         stats += f"\n今日免费: {free_used}/{daily_limit} | 永久次数: {perm_credits}"
         if usage_stats["used_permanent"] > 0:
             stats += f" (本次使用 {usage_stats['used_permanent']} 次永久额度)"
-        stats += (
-            f"\n冷却: {cooldown_remaining}s "
-            f"(从开始生成起算 {COOLDOWN_EXTRA_SECONDS}s)"
-        )
+        stats += f"\n冷却: {COOLDOWN_EXTRA_SECONDS}s"
 
     # 回退警告
     if fallback_errors:
