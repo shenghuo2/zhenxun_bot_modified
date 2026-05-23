@@ -5,7 +5,7 @@ from nonebot.adapters.onebot.v11 import Bot, Event, Message
 from nonebot.permission import SUPERUSER
 from openai import OpenAI
 
-from zhenxun.plugins.fxxk_word_config import DEEPSEEK_API_BASE, DEEPSEEK_API_KEY
+from .config import DEEPSEEK_API_BASE, DEEPSEEK_API_KEY
 
 # 初始化 DeepSeek API
 client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_API_BASE)

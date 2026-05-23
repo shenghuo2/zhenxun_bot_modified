@@ -1,9 +1,9 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
-_config_path = Path(__file__).with_name("fxxk_word_config_local.py")
+_config_path = Path(__file__).with_name("config_local.py")
 if not _config_path.exists():
-    raise RuntimeError("缺少本地配置：请复制 fxxk_word_config.example.py 为 fxxk_word_config_local.py 并填写真实配置。")
+    raise RuntimeError("缺少本地配置：请复制 config.example.py 为 config_local.py 并填写真实配置。")
 
 _spec = spec_from_file_location("fxxk_word_config_local", _config_path)
 if _spec is None or _spec.loader is None:

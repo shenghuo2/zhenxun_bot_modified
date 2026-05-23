@@ -14,6 +14,7 @@ def _load_process_env() -> None:
     """Load dotenv files into process env for libraries that read os.environ directly."""
     root = Path(__file__).resolve().parent
     base_env = root / ".env"
+    playwright_browsers = root / "data" / "ms-playwright"
 
     if base_env.is_file():
         load_dotenv(base_env, override=False)
@@ -22,6 +23,9 @@ def _load_process_env() -> None:
     env_file = root / f".env.{environment}"
     if env_file.is_file():
         load_dotenv(env_file, override=False)
+
+    if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ and playwright_browsers.is_dir():
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(playwright_browsers)
 
 _load_process_env()
 nonebot.init()
