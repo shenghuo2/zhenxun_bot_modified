@@ -114,6 +114,7 @@ ENV/
 env.bak/
 venv.bak/
 .env.dev
+test_rcon.py
 
 # Spyder project settings
 .spyderproject
