@@ -115,6 +115,7 @@ env.bak/
 venv.bak/
 .env.dev
 test_rcon.py
+zhenxun/plugins/fxxk_word_config_local.py
 
 # Spyder project settings
 .spyderproject

@@ -38,6 +38,7 @@ from .db import (
     enable_subscription,
     disable_subscription,
 )
+from .config import API_BASE, API_KEY
 
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
@@ -70,8 +71,6 @@ __plugin_meta__ = PluginMetadata(
     ).to_dict(),
 )
 
-API_BASE = "***REMOVED***"
-API_KEY = "***REMOVED***"
 DEFAULT_MODEL = "gpt-5.4-mini"
 IMAGE_MODEL = "gpt-5.4"
 REQUEST_TIMEOUT = 90.0

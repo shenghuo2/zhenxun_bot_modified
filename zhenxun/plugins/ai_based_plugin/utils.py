@@ -1,8 +1,10 @@
 from openai import OpenAI
 
+from .config import API_BASE, API_KEY
+
 client = OpenAI(
-    api_key="***REMOVED***", 
-    base_url="https://api.deerapi.com/v1",
+    api_key=API_KEY,
+    base_url=API_BASE,
 )
 def get_data(input_str:str) -> str:
     chat_completion = client.chat.completions.create(
