@@ -2,12 +2,13 @@ import json
 import re
 from urllib.parse import parse_qs, urlparse
 
-import aiohttp
+import httpx
+import msgspec
 
 from ..config import rconfig
-from ..constant import COMMON_HEADER
+from ..constants import COMMON_HEADER, COMMON_TIMEOUT
 from ..exception import ParseException
-from .data import ParseResult
+from .data import ImageContent, ParseResult, VideoContent
 from .utils import get_redirect_url
 
 
@@ -49,45 +50,95 @@ class XiaoHongShuParser:
         # 提取 xsec_source 和 xsec_token
         xsec_source = params.get("xsec_source", [None])[0] or "pc_feed"
         xsec_token = params.get("xsec_token", [None])[0]
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"https://www.xiaohongshu.com/explore/{xhs_id}?xsec_source={xsec_source}&xsec_token={xsec_token}",
-                headers=self.headers,
-            ) as resp:
-                html = await resp.text()
+
+        # 构造完整 URL
+        url = f"https://www.xiaohongshu.com/explore/{xhs_id}?xsec_source={xsec_source}&xsec_token={xsec_token}"
+        async with httpx.AsyncClient(headers=self.headers, timeout=COMMON_TIMEOUT) as client:
+            response = await client.get(url)
+            html = response.text
 
         pattern = r"window.__INITIAL_STATE__=(.*?)</script>"
         matched = re.search(pattern, html)
         if not matched:
-            raise ParseException("小红书 cookie 可能已失效")
+            raise ParseException("小红书分享链接失效或内容已删除")
 
         json_str = matched.group(1)
         json_str = json_str.replace("undefined", "null")
+
         json_obj = json.loads(json_str)
-        try:
-            note_data = json_obj["note"]["noteDetailMap"][xhs_id]["note"]
-        except KeyError:
-            raise ParseException("小红书 cookie 可能已失效")
-        # 资源类型 normal 图，video 视频
-        resource_type = note_data["type"]
-        # 标题
-        note_title = note_data["title"]
-        # 描述
-        note_desc = note_data["desc"]
-        title_desc = f"{note_title}\n{note_desc}"
-        img_urls = []
-        video_url = ""
-        if resource_type == "normal":
-            image_list = note_data["imageList"]
-            img_urls = [item["urlDefault"] for item in image_list]
-        elif resource_type == "video":
-            video_url = note_data["video"]["media"]["stream"]["h264"][0]["masterUrl"]
+
+        note_data = json_obj["note"]["noteDetailMap"][xhs_id]["note"]
+        note_detail = msgspec.convert(note_data, type=NoteDetail)
+
+        if video_url := note_detail.video_url:
+            content = VideoContent(video_url=video_url)
+            cover_url = note_detail.img_urls[0]
         else:
-            raise ParseException(f"不支持的小红书链接类型: {resource_type}")
+            content = ImageContent(pic_urls=note_detail.img_urls)
+            cover_url = None
+
         return ParseResult(
-            title=title_desc,
-            cover_url="",
-            video_url=video_url,
-            pic_urls=img_urls,
-            author=note_data["user"]["nickname"],
+            title=note_detail.title_desc,
+            cover_url=cover_url,
+            content=content,
+            author=note_detail.user.nickname,
         )
+
+
+from msgspec import Struct, field
+
+
+class Image(Struct):
+    urlDefault: str
+
+
+class Stream(Struct):
+    h264: list[dict] | None = None
+    h265: list[dict] | None = None
+    av1: list[dict] | None = None
+    h266: list[dict] | None = None
+
+
+class Media(Struct):
+    stream: Stream
+
+
+class Video(Struct):
+    media: Media
+
+
+class User(Struct):
+    nickname: str
+
+
+class NoteDetail(Struct):
+    type: str
+    title: str
+    desc: str
+    user: User
+    imageList: list[Image] = field(default_factory=list)
+    video: Video | None = None
+
+    @property
+    def title_desc(self) -> str:
+        return f"{self.title}\n{self.desc}".strip()
+
+    @property
+    def img_urls(self) -> list[str]:
+        return [item.urlDefault for item in self.imageList]
+
+    @property
+    def video_url(self) -> str | None:
+        if self.type != "video" or not self.video:
+            return None
+        stream = self.video.media.stream
+
+        if stream.h264:
+            return stream.h264[0]["masterUrl"]
+        elif stream.h265:
+            return stream.h265[0]["masterUrl"]
+        elif stream.av1:
+            return stream.av1[0]["masterUrl"]
+        elif stream.h266:
+            return stream.h266[0]["masterUrl"]
+        return None

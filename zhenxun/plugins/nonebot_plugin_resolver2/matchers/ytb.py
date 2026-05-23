@@ -2,42 +2,36 @@ from pathlib import Path
 import re
 from typing import Any
 
-from nonebot import logger, on_keyword
+from nonebot import logger
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent
 from nonebot.params import PausePromptResult
-from nonebot.rule import Rule
 from nonebot.typing import T_State
 
 from ..config import NEED_UPLOAD, NICKNAME, ytb_cookies_file
-from ..download.utils import keep_zh_en_num
 from ..download.ytdlp import get_video_info, ytdlp_download_audio, ytdlp_download_video
 from ..exception import handle_exception
-from .filter import is_not_in_disabled_groups
-from .helper import get_file_seg, get_record_seg, get_video_seg
+from ..utils import keep_zh_en_num
+from .helper import obhelper
+from .preprocess import KeyPatternMatched, on_keyword_regex
 
-ytb = on_keyword(keywords={"youtube.com", "youtu.be"}, rule=Rule(is_not_in_disabled_groups))
+# https://youtu.be/EKkzbbLYPuI?si=K_S9zIp5g7DhigVz
+# https://www.youtube.com/watch?v=1LnPnmKALL8&list=RD8AxpdwegNKc&index=2
+ytb = on_keyword_regex(
+    ("youtube.com", r"https?://(?:www\.)?youtube\.com/[A-Za-z\d\._\?%&\+\-=/#]+"),
+    ("youtu.be", r"https?://(?:www\.)?youtu\.be/[A-Za-z\d\._\?%&\+\-=/#]+"),
+)
 
 
 @ytb.handle()
 @handle_exception()
-async def _(event: MessageEvent, state: T_State):
-    message = event.message.extract_plain_text().strip()
-    pattern = (
-        # https://youtu.be/EKkzbbLYPuI?si=K_S9zIp5g7DhigVz
-        # https://www.youtube.com/watch?v=1LnPnmKALL8&list=RD8AxpdwegNKc&index=2
-        r"(?:https?://)?(?:www\.)?(?:youtube\.com|youtu\.be)/[A-Za-z\d\._\?%&\+\-=/#]+"
-    )
-    matched = re.search(pattern, message)
-    if not matched:
-        logger.warning(f"{message} 中的链接不支持，已忽略")
-        await ytb.finish()
-
-    url = matched.group(0)
+async def _(state: T_State, searched: re.Match[str] = KeyPatternMatched()):
+    url = searched.group(0)
     try:
         info_dict = await get_video_info(url, ytb_cookies_file)
         title = info_dict.get("title", "未知")
-    except Exception as e:
-        await ytb.finish(f"{NICKNAME}解析 | 油管 - 标题获取出错: {e}")
+    except Exception:
+        logger.exception(f"油管标题获取失败 | {url}")
+        await ytb.finish(f"{NICKNAME}解析 | 油管 - 标题获取出错")
     await ytb.send(f"{NICKNAME}解析 | 油管 - {title}")
     state["url"] = url
     state["title"] = title
@@ -69,15 +63,15 @@ async def _(
             video_path = await ytdlp_download_video(url, ytb_cookies_file)
         else:
             audio_path = await ytdlp_download_audio(url, ytb_cookies_file)
-    except Exception as e:
+    except Exception:
         media_type = "视频" if is_video else "音频"
-        logger.error(f"{media_type}下载失败 | {url} | {e}", exc_info=True)
+        logger.exception(f"{media_type}下载失败 | {url}")
         await ytb.finish(f"{media_type}下载失败", reply_message=True)
     # 发送视频或音频
     if video_path:
-        await ytb.send(get_video_seg(video_path))
+        await ytb.send(obhelper.video_seg(video_path))
     elif audio_path:
-        await ytb.send(get_record_seg(audio_path))
+        await ytb.send(obhelper.record_seg(audio_path))
         if NEED_UPLOAD:
             file_name = f"{keep_zh_en_num(title)}.flac"
-            await ytb.send(get_file_seg(audio_path, file_name))
+            await ytb.send(obhelper.file_seg(audio_path, file_name))

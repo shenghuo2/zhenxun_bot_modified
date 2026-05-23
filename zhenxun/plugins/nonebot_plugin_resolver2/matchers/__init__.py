@@ -8,14 +8,14 @@ from .tiktok import tiktok
 from .twitter import twitter
 from .weibo import weibo
 from .xiaohongshu import xiaohongshu
-# from .ytb import ytb
+from .ytb import ytb
 
 resolvers: dict[str, type[Matcher]] = {
     "bilibili": bilibili,
     "acfun": acfun,
     "douyin": douyin,
     "kuaishou": kuaishou,
-    # "ytb": ytb,
+    "ytb": ytb,
     "twitter": twitter,
     "tiktok": tiktok,
     "weibo": weibo,

@@ -1,43 +1,35 @@
 import re
 from typing import Any
 
-import aiohttp
-from nonebot import logger, on_keyword
-from nonebot.adapters.onebot.v11 import MessageEvent
-from nonebot.rule import Rule
+import httpx
 
-from ..config import NICKNAME, PROXY
-from ..constant import COMMON_HEADER
-from ..download import download_imgs_without_raise, download_video
+from ..config import NICKNAME
+from ..constants import COMMON_HEADER, COMMON_TIMEOUT
+from ..download import DOWNLOADER
 from ..exception import ParseException, handle_exception
-from .filter import is_not_in_disabled_groups
-from .helper import get_img_seg, get_video_seg, send_segments
+from .helper import obhelper
+from .preprocess import KeyPatternMatched, on_keyword_regex
 
-twitter = on_keyword(keywords={"x.com"}, rule=Rule(is_not_in_disabled_groups))
+twitter = on_keyword_regex(("x.com", r"https?://x.com/[0-9-a-zA-Z_]{1,20}/status/([0-9]+)"))
 
 
 @twitter.handle()
 @handle_exception()
-async def _(event: MessageEvent):
-    msg: str = event.message.extract_plain_text().strip()
-    pattern = r"https?:\/\/x.com\/[0-9-a-zA-Z_]{1,20}\/status\/([0-9]+)"
-    matched = re.search(pattern, msg)
-    if not matched:
-        logger.info("没有匹配到 x.com 的 url, 忽略")
-        return
-    x_url = matched.group(0)
+async def _(searched: re.Match[str] = KeyPatternMatched()):
+    x_url = searched.group(0)
 
     await twitter.send(f"{NICKNAME}解析 | 小蓝鸟")
 
     video_url, pic_urls = await parse_x_url(x_url)
 
     if video_url:
-        video_path = await download_video(video_url, proxy=PROXY)
-        await twitter.send(get_video_seg(video_path))
+        video_path = await DOWNLOADER.download_video(video_url)
+        await twitter.send(obhelper.video_seg(video_path))
 
     if pic_urls:
-        img_paths = await download_imgs_without_raise(pic_urls, proxy=PROXY)
-        await send_segments([get_img_seg(img_path) for img_path in img_paths])
+        img_paths = await DOWNLOADER.download_imgs_without_raise(pic_urls)
+        assert len(img_paths) > 0
+        await obhelper.send_segments([obhelper.img_seg(img_path) for img_path in img_paths])
 
 
 async def parse_x_url(x_url: str) -> tuple[str, list[str]]:
@@ -57,9 +49,10 @@ async def parse_x_url(x_url: str) -> tuple[str, list[str]]:
             **COMMON_HEADER,
         }
         data = {"q": url, "lang": "zh-cn"}
-        async with aiohttp.ClientSession() as session:
-            async with session.post("https://xdown.app/api/ajaxSearch", headers=headers, data=data) as response:
-                return await response.json()
+        async with httpx.AsyncClient(headers=headers, timeout=COMMON_TIMEOUT) as client:
+            url = "https://xdown.app/api/ajaxSearch"
+            response = await client.post(url, data=data)
+            return response.json()
 
     resp = await x_req(x_url)
     if resp.get("status") != "ok":

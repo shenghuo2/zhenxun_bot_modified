@@ -46,6 +46,11 @@ aiocache = "^0.12.2"
 py-cpuinfo = "^9.0.0"
 nonebot-plugin-uninfo = "^0.8.0"
 nonebot-plugin-alconna = "^0.54.0"
+msgspec = ">=0.19.0"
+yt-dlp = ">=2025.9.5"
+tqdm = ">=4.67.1,<5.0.0"
+curl-cffi = ">=0.8.0,<1.0.0"
+bilibili-api-python = ">=17.3.0,<18.0.0"
 
 [tool.poetry.group.dev.dependencies]
 nonebug = "^0.4"

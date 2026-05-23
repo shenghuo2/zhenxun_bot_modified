@@ -13,7 +13,7 @@ from .matchers import resolvers
 
 __plugin_meta__ = PluginMetadata(
     name="链接分享自动解析",
-    description="BV号/链接/小程序/卡片 | B站/抖音/网易云/微博/小红书/youtube/tiktok/twitter/acfun",
+    description="BV号/链接/小程序/卡片 | B站/抖音/快手/微博/小红书/youtube/tiktok/twitter/acfun",
     usage="发送支持平台的(BV号/链接/小程序/卡片)即可",
     type="application",
     homepage="https://github.com/fllesser/nonebot-plugin-resolver2",
@@ -58,13 +58,13 @@ async def clean_plugin_cache():
     try:
         files = [f for f in plugin_cache_dir.iterdir() if f.is_file()]
         if not files:
-            logger.info("no cache files to clean")
+            logger.info("No cache files to clean")
             return
 
         # 并发删除文件
         tasks = [safe_unlink(file) for file in files]
         await asyncio.gather(*tasks)
 
-        logger.info(f"Successfully cleaned {len(files)} cache files")
-    except Exception as e:
-        logger.error(f"Error while cleaning cache: {e}")
+        logger.success(f"Successfully cleaned {len(files)} cache files")
+    except Exception:
+        logger.exception("Error while cleaning cache files")

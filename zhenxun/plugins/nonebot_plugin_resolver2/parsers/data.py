@@ -1,31 +1,56 @@
 from dataclasses import dataclass, field
 
-from ..constant import ANDROID_HEADER as ANDROID_HEADER
-from ..constant import COMMON_HEADER as COMMON_HEADER
-from ..constant import IOS_HEADER as IOS_HEADER
+from ..constants import ANDROID_HEADER as ANDROID_HEADER
+from ..constants import COMMON_HEADER as COMMON_HEADER
+from ..constants import IOS_HEADER as IOS_HEADER
+
+
+@dataclass
+class AudioContent:
+    """音频内容"""
+
+    audio_url: str
+
+
+@dataclass
+class VideoContent:
+    """视频内容"""
+
+    video_url: str
+
+
+@dataclass
+class ImageContent:
+    """图片内容"""
+
+    pic_urls: list[str] = field(default_factory=list)
+    dynamic_urls: list[str] = field(default_factory=list)
 
 
 @dataclass
 class ParseResult:
-    """解析结果"""
+    """完整的解析结果"""
 
-    # 标题
     title: str
+    author: str | None = None
+    cover_url: str | None = None
+    content: AudioContent | VideoContent | ImageContent | None = None
 
-    # 作者
-    author: str = ""
+    @property
+    def video_url(self) -> str | None:
+        return self.content.video_url if isinstance(self.content, VideoContent) else None
 
-    # 封面地址
-    cover_url: str = ""
+    @property
+    def pic_urls(self) -> list[str] | None:
+        return self.content.pic_urls if isinstance(self.content, ImageContent) else None
 
-    # 视频地址
-    video_url: str = ""
+    @property
+    def dynamic_urls(self) -> list[str] | None:
+        return self.content.dynamic_urls if isinstance(self.content, ImageContent) else None
 
-    # 音频地址
-    audio_url: str = ""
+    @property
+    def audio_url(self) -> str | None:
+        return self.content.audio_url if isinstance(self.content, AudioContent) else None
 
-    # 图片地址
-    pic_urls: list[str] = field(default_factory=list)
-
-    # 动态视频地址
-    dynamic_urls: list[str] = field(default_factory=list)
+    def __str__(self) -> str:
+        return f"title: {self.title}\nauthor: {self.author}\ncover_url: {self.cover_url}\ncontent: {self.content}"

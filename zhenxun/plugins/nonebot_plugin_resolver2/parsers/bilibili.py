@@ -1,12 +1,14 @@
 from dataclasses import dataclass
+import json
 import re
 from typing import Any
 
-from bilibili_api import HEADERS, Credential
+from bilibili_api import HEADERS, Credential, request_settings, select_client
 from bilibili_api.video import Video
 from nonebot import logger
 
-from ..config import rconfig
+from ..config import plugin_config_dir, rconfig
+from ..cookie import ck2dict
 from ..exception import ParseException
 
 
@@ -19,24 +21,15 @@ class BilibiliVideoInfo:
     cover_url: str
     video_duration: int
     video_url: str
-    audio_url: str
+    audio_url: str | None
     ai_summary: str
 
 
 class BilibiliParser:
     def __init__(self):
-        self.headers = HEADERS
-        self.credential: Credential | None = None
-        self._init_credential()
-
-    def _init_credential(self):
-        """初始化 bilibili api"""
-
-        from bilibili_api import request_settings, select_client
-
-        from ..config import rconfig
-        from ..cookie import ck2dict
-
+        self.headers = HEADERS.copy()
+        self._credential: Credential | None = None
+        self._cookies_file = plugin_config_dir / "bilibili_cookies.json"
         # 选择客户端
         select_client("curl_cffi")
         # 模仿浏览器
@@ -44,10 +37,46 @@ class BilibiliParser:
         # 第二参数数值参考 curl_cffi 文档
         # https://curl-cffi.readthedocs.io/en/latest/impersonate.html
 
+    async def _init_credential(self) -> Credential | None:
+        """初始化 bilibili api"""
+
         if not rconfig.r_bili_ck:
-            logger.warning("未配置哔哩哔哩 cookie, 无法使用哔哩哔哩 AI 总结, 可能无法解析 720p 以上画质视频")
-            return
-        self.credential = Credential.from_cookies(ck2dict(rconfig.r_bili_ck))
+            logger.warning("未配置 r_bili_ck, 无法使用哔哩哔哩 AI 总结, 可能无法解析 720p 以上画质视频")
+            return None
+
+        credential = Credential.from_cookies(ck2dict(rconfig.r_bili_ck))
+        if not await credential.check_valid() and self._cookies_file.exists():
+            logger.info(f"r_bili_ck 已过期, 尝试从 {self._cookies_file} 加载")
+            credential = Credential.from_cookies(json.loads(self._cookies_file.read_text()))
+        else:
+            logger.info(f"r_bili_ck 有效, 保存到 {self._cookies_file}")
+            self._cookies_file.write_text(json.dumps(credential.get_cookies()))
+
+        return credential
+
+    @property
+    async def credential(self) -> Credential | None:
+        """获取哔哩哔哩登录凭证"""
+
+        if self._credential is None:
+            self._credential = await self._init_credential()
+            if self._credential is None:
+                return None
+
+        if not await self._credential.check_valid():
+            logger.warning("哔哩哔哩 cookies 已过期, 请重新配置 r_bili_ck")
+            return self._credential
+
+        if await self._credential.check_refresh():
+            logger.info("哔哩哔哩 cookies 需要刷新")
+            if self._credential.has_ac_time_value() and self._credential.has_bili_jct():
+                await self._credential.refresh()
+                logger.info(f"哔哩哔哩 cookies 刷新成功, 保存到 {self._cookies_file}")
+                self._cookies_file.write_text(json.dumps(self._credential.get_cookies()))
+            else:
+                logger.warning("哔哩哔哩 cookies 刷新需要包含 SESSDATA, ac_time_value, bili_jct")
+
+        return self._credential
 
     async def parse_opus(self, opus_id: int) -> tuple[list[str], str]:
         """解析动态信息
@@ -60,7 +89,7 @@ class BilibiliParser:
         """
         from bilibili_api.opus import Opus
 
-        opus = Opus(opus_id, self.credential)
+        opus = Opus(opus_id, await self.credential)
         opus_info = await opus.get_info()
         if not isinstance(opus_info, dict):
             raise ParseException("获取动态信息失败")
@@ -94,7 +123,7 @@ class BilibiliParser:
         """
         from bilibili_api.live import LiveRoom
 
-        room = LiveRoom(room_display_id=room_id, credential=self.credential)
+        room = LiveRoom(room_display_id=room_id, credential=await self.credential)
         room_info: dict[str, Any] = (await room.get_room_info())["room_info"]
         title, cover, keyframe = (
             room_info["title"],
@@ -179,7 +208,7 @@ class BilibiliParser:
             texts.append(f"🧉 标题：{title}\n📝 简介：{intro}\n🔗 链接：{link}\nhttps://bilibili.com/video/av{avid}")
         return texts, urls
 
-    def parse_video(self, *, bvid: str | None = None, avid: int | None = None) -> Video:
+    async def parse_video(self, *, bvid: str | None = None, avid: int | None = None) -> Video:
         """解析视频信息
 
         Args:
@@ -187,9 +216,9 @@ class BilibiliParser:
             avid (int | None): avid
         """
         if avid:
-            return Video(aid=avid, credential=self.credential)
+            return Video(aid=avid, credential=await self.credential)
         elif bvid:
-            return Video(bvid=bvid, credential=self.credential)
+            return Video(bvid=bvid, credential=await self.credential)
         else:
             raise ParseException("avid 和 bvid 至少指定一项")
 
@@ -208,12 +237,11 @@ class BilibiliParser:
             page_num (int): 页码
         """
 
-        video = self.parse_video(bvid=bvid, avid=avid)
+        video = await self.parse_video(bvid=bvid, avid=avid)
         video_info: dict[str, Any] = await video.get_info()
 
         video_duration: int = int(video_info["duration"])
 
-        display_info: str = ""
         cover_url: str | None = None
         title: str = video_info["title"]
         # 处理分 p
@@ -244,9 +272,9 @@ class BilibiliParser:
             f"📝 简介：{video_info['desc']}\n"
             f"🏄‍♂️ {online['total']} 人正在观看，{online['count']} 人在网页端观看"
         )
-        ai_summary: str = "未配置 ck 无法使用 AI 总结"
+        ai_summary: str = "哔哩哔哩 cookie 未配置或失效, 无法使用 AI 总结"
         # 获取 AI 总结
-        if self.credential:
+        if self._credential:
             cid = await video.get_cid(page_idx)
             ai_conclusion = await video.get_ai_conclusion(cid)
             ai_summary = ai_conclusion.get("model_result", {"summary": ""}).get("summary", "").strip()
@@ -269,7 +297,7 @@ class BilibiliParser:
         bvid: str | None = None,
         avid: int | None = None,
         page_index: int = 0,
-    ) -> tuple[str, str]:
+    ) -> tuple[str, str | None]:
         """解析视频下载链接
 
         Args:
@@ -286,7 +314,7 @@ class BilibiliParser:
         )
 
         if video is None:
-            video = self.parse_video(bvid=bvid, avid=avid)
+            video = await self.parse_video(bvid=bvid, avid=avid)
         # 获取下载数据
         download_url_data = await video.get_download_url(page_index=page_index)
         detecter = VideoDownloadURLDataDetecter(download_url_data)
@@ -302,7 +330,7 @@ class BilibiliParser:
         logger.debug(f"视频流质量: {video_stream.video_quality.name}, 编码: {video_stream.video_codecs}")
         audio_stream = streams[1]
         if not isinstance(audio_stream, AudioStreamDownloadURL):
-            return video_stream.url, ""
+            return video_stream.url, None
         logger.debug(f"音频流质量: {audio_stream.audio_quality.name}")
         return video_stream.url, audio_stream.url
 
