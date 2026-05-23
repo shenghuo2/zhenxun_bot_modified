@@ -16,7 +16,7 @@ CONFIG_DEFS = [
     {
         "module": MODULE,
         "key": "GROUP_WHITELIST",
-        "value": [], 
+        "value": [],
         "default_value": [],
         "help": "启用该插件的群号列表，为空则全部启用",
         "type": list,
@@ -35,6 +35,14 @@ CONFIG_DEFS = [
         "value": True,
         "default_value": False,
         "help": "是否启用B站视频查重（含卡片和文本链接）",
+        "type": bool,
+    },
+    {
+        "module": MODULE,
+        "key": "ENABLE_DOUYIN_CHECK",
+        "value": True,
+        "default_value": False,
+        "help": "是否启用抖音解析内容查重（依赖 nonebot_plugin_resolver2）",
         "type": bool,
     },
     {

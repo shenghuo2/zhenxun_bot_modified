@@ -6,7 +6,7 @@ from nonebot_plugin_uninfo import Uninfo
 
 from zhenxun.services.log import logger
 
-from .config import CONFIG_DEFS, MODULE, get_cfg
+from .config import CONFIG_DEFS, get_cfg
 from .db import close_db, init_db
 
 __plugin_meta__ = PluginMetadata(
@@ -87,7 +87,23 @@ async def handle_message(event: MessageEvent, session: Uninfo, bot: Bot):
                 logger.error(f"发送B站查重回复失败: {e}", "message_dedup")
             return
 
-    # 3. 普通视频消息查重
+    # 3. 抖音解析内容查重
+    if get_cfg("ENABLE_DOUYIN_CHECK"):
+        from .checkers.douyin_checker import check_douyin
+
+        result = await check_douyin(event, session, bot, message)
+        if result is not False:
+            if result is True:
+                return
+            try:
+                await _matcher.finish(result)
+            except FinishedException:
+                pass
+            except Exception as e:
+                logger.error(f"发送抖音查重回复失败: {e}", "message_dedup")
+            return
+
+    # 4. 普通视频消息查重
     if get_cfg("ENABLE_VIDEO_CHECK"):
         from .checkers.video_checker import check_video
 
@@ -106,7 +122,7 @@ async def handle_message(event: MessageEvent, session: Uninfo, bot: Bot):
 
 # ── 注册 #标记 / #删除标记（导入即注册） ──────────────────
 
-from .checkers import mark_commands as _mark  # noqa: F401, E402
+from .checkers import mark_commands as _mark  # noqa: F401
 
 # ── 生命周期 ─────────────────────────────────────────────
 
