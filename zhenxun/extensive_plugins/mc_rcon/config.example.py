@@ -1,6 +1,6 @@
 """Minecraft RCON whitelist manager example config.
 
-Copy to config.py locally and fill in real values.
+Copy to config_local.py locally and fill in real values.
 """
 
 SERVER_NAME: str = "Example Server"

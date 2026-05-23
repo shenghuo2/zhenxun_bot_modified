@@ -1,6 +1,6 @@
 """Example config for GPT image generation.
 
-Copy to config.py locally and fill in private provider values.
+Copy to config_local.py locally and fill in private provider values.
 """
 
 import os

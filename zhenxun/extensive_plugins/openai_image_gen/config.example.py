@@ -1,6 +1,6 @@
 """Example config for OpenAI image generation.
 
-Copy to config.py locally and fill in private values.
+Copy to config_local.py locally and fill in private values.
 """
 
 import os

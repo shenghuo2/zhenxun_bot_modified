@@ -1,6 +1,6 @@
 """Example config for web-search-tool.
 
-Copy to config.py locally and fill in private values.
+Copy to config_local.py locally and fill in private values.
 """
 
 import os

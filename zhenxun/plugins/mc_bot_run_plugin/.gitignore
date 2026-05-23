@@ -1,5 +1,5 @@
 whitelist.json
-config.py
+config_local.py
 id_rsa
 id_*
 !id_rsa.example
