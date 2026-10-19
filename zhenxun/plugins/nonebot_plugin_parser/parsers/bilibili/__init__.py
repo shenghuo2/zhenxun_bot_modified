@@ -1,0 +1,421 @@
+import json
+import asyncio
+from re import Match
+from typing import ClassVar
+from collections.abc import AsyncGenerator
+
+from msgspec import convert
+from nonebot import logger
+from bilibili_api import HEADERS, Credential, select_client, request_settings
+from bilibili_api.opus import Opus
+from bilibili_api.video import Video
+from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
+
+from ..base import (
+    BaseParser,
+    PlatformEnum,
+    ParseException,
+    IgnoreException,
+    DownloadException,
+    handle,
+    pconfig,
+)
+from ..data import Platform, ImageContent, MediaContent
+from ..cookie import ck2dict
+from .dynamic import DynamicInfo
+
+# 选择客户端
+select_client("curl_cffi")
+# 模拟浏览器，第二参数数值参考 curl_cffi 文档
+# https://curl-cffi.readthedocs.io/en/latest/impersonate.html
+request_settings.set("impersonate", "chrome131")
+
+
+class BilibiliParser(BaseParser):
+    platform: ClassVar[Platform] = Platform(name=PlatformEnum.BILIBILI, display_name="哔哩哔哩")
+
+    def __init__(self):
+        self.headers = HEADERS.copy()
+        self._credential: Credential | None = None
+        self._cookies_file = pconfig.config_dir / "bilibili_cookies.json"
+
+    @handle("b23.tv", r"b23\.tv/[0-9a-zA-Z._?%&+-=/#]+")
+    @handle("bili2233", r"bili2233\.cn/[0-9a-zA-Z._?%&+-=/#]+")
+    async def _parse_short_link(self, searched: Match[str]):
+        """解析短链"""
+        url = f"https://{searched.group(0)}"
+        return await self.parse_with_redirect(url)
+
+    @handle("BV", r"^(?P<bvid>BV[0-9a-zA-Z]{10})(?:\s)?(?P<page_num>\d{1,3})?$")
+    @handle("/BV", r"bilibili\.com(?:/video)?/(?P<bvid>BV[0-9A-Za-z]{10})(?:.*?[?&]p=(?P<page_num>\d{1,3}))?")
+    async def _parse_bv(self, searched: Match[str]):
+        """解析视频信息"""
+        bvid = str(searched.group("bvid"))
+        page_num = int(searched.group("page_num") or 1)
+
+        return await self.parse_video(bvid=bvid, page_num=page_num)
+
+    @handle("av", r"^av(?P<avid>\d{6,})(?:\s)?(?P<page_num>\d{1,3})?$")
+    @handle("/av", r"bilibili\.com(?:/video)?/av(?P<avid>\d{6,})(?:.*?[?&]p=(?P<page_num>\d{1,3}))?")
+    async def _parse_av(self, searched: Match[str]):
+        """解析视频信息"""
+        avid = int(searched.group("avid"))
+        page_num = int(searched.group("page_num") or 1)
+
+        return await self.parse_video(avid=avid, page_num=page_num)
+
+    @handle("/dynamic/", r"bilibili\.com/dynamic/(?P<dynamic_id>\d+)")
+    @handle("/opus/", r"bilibili\.com/opus/(?P<dynamic_id>\d+)")
+    @handle("t.bili", r"t\.bilibili\.com/(?P<dynamic_id>\d+)")
+    async def _parse_dynamic(self, searched: Match[str]):
+        """解析动态信息"""
+        dynamic_id = int(searched.group("dynamic_id"))
+        return await self.parse_dynamic_or_opus(dynamic_id)
+
+    @handle("live.bili", r"live\.bilibili\.com/(?P<room_id>\d+)")
+    async def _parse_live(self, searched: Match[str]):
+        """解析直播信息"""
+        room_id = int(searched.group("room_id"))
+        return await self.parse_live(room_id)
+
+    @handle("/favlist", r"favlist\?fid=(?P<fav_id>\d+)")
+    async def _parse_favlist(self, searched: Match[str]):
+        """解析收藏夹信息"""
+        fav_id = int(searched.group("fav_id"))
+        return await self.parse_favlist(fav_id)
+
+    @handle("/read/", r"bilibili\.com/read/cv(?P<read_id>\d+)")
+    async def _parse_read(self, searched: Match[str]):
+        """解析专栏信息"""
+        from bilibili_api.article import Article
+
+        read_id = int(searched.group("read_id"))
+        article = Article(read_id)
+        opus = await article.turn_to_opus()
+        return await self._parse_bilibli_api_opus(opus)
+
+    async def parse_video(
+        self,
+        *,
+        bvid: str | None = None,
+        avid: int | None = None,
+        page_num: int = 1,
+    ):
+        """解析视频信息"""
+
+        from .video import VideoInfo, AIConclusion
+
+        video = Video(bvid=bvid, aid=avid, credential=await self.credential)
+        video_info = convert(await video.get_info(), VideoInfo)
+        # UP
+        author = self.create_author(video_info.owner.name, video_info.owner.face)
+        # 处理分 p
+        page_info = video_info.extract_info_with_page(page_num)
+
+        # 获取 AI 总结
+        if self._credential:
+            cid = await video.get_cid(page_info.index)
+            ai_conclusion = await video.get_ai_conclusion(cid)
+            ai_conclusion = convert(ai_conclusion, AIConclusion)
+            ai_summary = ai_conclusion.summary
+        else:
+            ai_summary: str = "哔哩哔哩 cookie 未配置或失效, 无法使用 AI 总结"
+
+        url = f"https://bilibili.com/{video_info.bvid}"
+        url += f"?p={page_info.index + 1}" if page_info.index > 0 else ""
+
+        # 视频下载 task
+        async def download_video():
+            output_path = pconfig.cache_dir / f"{video_info.bvid}-{page_num}.mp4"
+            if output_path.exists():
+                return output_path
+            v_url, a_url = await self.extract_download_urls(video=video, page_index=page_info.index)
+            if page_info.duration > pconfig.duration_maximum:
+                logger.warning(f"视频时长 {page_info.duration} 秒, 超过 {pconfig.duration_maximum} 秒, 取消下载")
+                raise IgnoreException
+            if a_url is not None:
+                path = await self.downloader.download_av_and_merge(
+                    v_url,
+                    a_url,
+                    output_path=output_path,
+                    ext_headers=self.headers,
+                )
+            else:
+                path = await self.downloader._download_file(
+                    v_url,
+                    file_name=output_path.name,
+                    ext_headers=self.headers,
+                )
+            return path
+
+        video_content = self.create_video(
+            asyncio.create_task(download_video()),
+            page_info.cover,
+            page_info.duration,
+        )
+
+        return self.result(
+            url=url,
+            title=page_info.title,
+            timestamp=page_info.timestamp,
+            text=video_info.desc,
+            author=author,
+            contents=[video_content],
+            extra={"info": ai_summary},
+        )
+
+    async def parse_dynamic_or_opus(self, dynamic_id: int):
+        """解析动态或图文"""
+        from bilibili_api.dynamic import Dynamic
+
+        from .dynamic import DynamicWrapper
+
+        dynamic = Dynamic(dynamic_id, await self.credential)
+        if await dynamic.is_article():
+            return await self._parse_bilibli_api_opus(dynamic.turn_to_opus())
+
+        dynamic_info = convert(await dynamic.get_info(), DynamicWrapper).item
+        return await self._parse_dynamic_info(dynamic_info)
+
+    async def _parse_dynamic_info(self, dynamic_info: DynamicInfo):
+        if dynamic_info.is_video():
+            if (major := dynamic_info.modules.major) and (archive := major.archive):
+                result = await self.parse_video(bvid=archive.bvid)
+                result.text = dynamic_info.text
+                result.extra["content_type"] = "动态"
+                return result
+
+        # 下载图片
+        author = self.create_author(dynamic_info.name, dynamic_info.avatar)
+        contents: list[MediaContent] = []
+        contents.extend(self.create_images(dynamic_info.image_urls))
+
+        repost = None
+        if dynamic_info.type == "DYNAMIC_TYPE_FORWARD" and dynamic_info.orig is not None:
+            repost = await self._parse_dynamic_info(dynamic_info.orig)
+
+        return self.result(
+            title=dynamic_info.title,
+            text=dynamic_info.text,
+            timestamp=dynamic_info.timestamp,
+            author=author,
+            contents=contents,
+            repost=repost,
+            extra={"content_type": "动态"},
+        )
+
+    async def parse_opus_by_id(self, opus_id: int):
+        """解析图文动态(opus id)"""
+        opus = Opus(opus_id, await self.credential)
+        return await self._parse_bilibli_api_opus(opus)
+
+    async def _parse_bilibli_api_opus(self, bili_opus: Opus):
+        """解析图文动态(Opus)"""
+
+        from .opus import OpusItem
+
+        opus_info = await bili_opus.get_info()
+        if not isinstance(opus_info, dict):
+            raise ParseException("获取图文动态信息失败")
+
+        # 转换为结构体
+        opus_data = convert(opus_info, OpusItem)
+        logger.debug(f"opus_data: {opus_data}")
+        author = self.create_author(*opus_data.name_avatar)
+
+        # 按顺序处理图文内容
+        result = self.result(
+            author=author,
+            title=opus_data.title,
+            timestamp=opus_data.timestamp,
+        )
+
+        for node in opus_data.extract_nodes():
+            if isinstance(node, str):
+                result.graphics.append(node)
+            else:
+                result.graphics.append(self.create_image(node.url, alt=node.alt))
+
+        return result
+
+    async def parse_live(self, room_id: int):
+        """解析直播"""
+        from bilibili_api.live import LiveRoom
+
+        from .live import RoomData
+
+        room = LiveRoom(room_display_id=room_id, credential=await self.credential)
+        info_dict = await room.get_room_info()
+
+        room_data = convert(info_dict, RoomData)
+        contents: list[MediaContent] = []
+        # 下载封面
+        if cover := room_data.cover:
+            cover_task = self.downloader.download_img(cover, ext_headers=self.headers)
+            contents.append(self.create_image(cover_task))
+
+        # 下载关键帧
+        if keyframe := room_data.keyframe:
+            keyframe_task = self.downloader.download_img(keyframe, ext_headers=self.headers)
+            contents.append(self.create_image(keyframe_task))
+
+        author = self.create_author(room_data.name, room_data.avatar)
+
+        url = f"https://www.bilibili.com/blackboard/live/live-activity-player.html?enterTheRoom=0&cid={room_id}"
+        return self.result(
+            url=url,
+            title=room_data.title,
+            text=room_data.detail,
+            contents=contents,
+            author=author,
+        )
+
+    async def parse_favlist(self, fav_id: int):
+        """解析收藏夹"""
+        from bilibili_api.favorite_list import get_video_favorite_list_content
+
+        from .favlist import FavData
+
+        # 只会取一页，20 个
+        fav_dict = await get_video_favorite_list_content(fav_id)
+
+        if fav_dict["medias"] is None:
+            raise ParseException("收藏夹内容为空, 或被风控")
+
+        favdata = convert(fav_dict, FavData)
+
+        author = self.create_author(favdata.info.upper.name, favdata.info.upper.face)
+
+        graphics: list[str | ImageContent] = []
+        for fav in favdata.medias:
+            graphics.append(self.create_image(fav.cover, alt=fav.desc))
+            graphics.append(fav.desc)
+
+        return self.result(
+            title=favdata.title,
+            timestamp=favdata.timestamp,
+            author=author,
+            graphics=graphics,
+        )
+
+    async def extract_download_urls(
+        self,
+        video: Video | None = None,
+        *,
+        bvid: str | None = None,
+        avid: int | None = None,
+        page_index: int = 0,
+    ) -> tuple[str, str | None]:
+        """解析视频下载链接"""
+
+        from bilibili_api.video import (
+            AudioStreamDownloadURL,
+            VideoStreamDownloadURL,
+            VideoDownloadURLDataDetecter,
+        )
+
+        if video is None:
+            video = Video(bvid=bvid, aid=avid, credential=await self.credential)
+
+        # 获取下载数据
+        download_url_data = await video.get_download_url(page_index=page_index)
+        detecter = VideoDownloadURLDataDetecter(download_url_data)
+        streams = detecter.detect_best_streams(
+            video_max_quality=pconfig.bili_video_quality,
+            codecs=pconfig.bili_video_codes,
+            no_dolby_video=True,
+            no_hdr=True,
+        )
+        video_stream = streams[0]
+        if not isinstance(video_stream, VideoStreamDownloadURL):
+            raise DownloadException("未找到可下载的视频流")
+        logger.debug(f"视频流质量: {video_stream.video_quality.name}, 编码: {video_stream.video_codecs}")
+
+        audio_stream = streams[1]
+        if not isinstance(audio_stream, AudioStreamDownloadURL):
+            return video_stream.url, None
+        logger.debug(f"音频流质量: {audio_stream.audio_quality.name}")
+        return video_stream.url, audio_stream.url
+
+    def _save_credential(self):
+        """存储哔哩哔哩登录凭证"""
+        if self._credential is None:
+            return
+
+        self._cookies_file.write_text(json.dumps(self._credential.get_cookies()))
+
+    def _load_credential(self):
+        """从文件加载哔哩哔哩登录凭证"""
+        if not self._cookies_file.exists():
+            return
+
+        self._credential = Credential.from_cookies(json.loads(self._cookies_file.read_text()))
+
+    async def login_with_qrcode(self) -> bytes:
+        """通过二维码登录获取哔哩哔哩登录凭证"""
+        self._qr_login = QrCodeLogin()
+        await self._qr_login.generate_qrcode()
+
+        qr_pic = self._qr_login.get_qrcode_picture()
+        return qr_pic.content
+
+    async def check_qr_state(self) -> AsyncGenerator[str]:
+        """检查二维码登录状态"""
+        scan_tip_pending = True
+
+        for _ in range(30):
+            state = await self._qr_login.check_state()
+            match state:
+                case QrCodeLoginEvents.DONE:
+                    yield "登录成功"
+                    self._credential = self._qr_login.get_credential()
+                    self._save_credential()
+                    break
+                case QrCodeLoginEvents.CONF:
+                    if scan_tip_pending:
+                        yield "二维码已扫描, 请确认登录"
+                        scan_tip_pending = False
+                case QrCodeLoginEvents.TIMEOUT:
+                    yield "二维码过期, 请重新生成"
+                    break
+            await asyncio.sleep(2)
+        else:
+            yield "二维码登录超时, 请重新生成"
+
+    async def _init_credential(self):
+        """初始化哔哩哔哩登录凭证"""
+        if pconfig.bili_ck is None:
+            self._load_credential()
+            return
+
+        credential = Credential.from_cookies(ck2dict(pconfig.bili_ck))
+        if await credential.check_valid():
+            logger.info(f"`parser_bili_ck` 有效, 保存到 {self._cookies_file}")
+            self._credential = credential
+            self._save_credential()
+        else:
+            logger.info(f"`parser_bili_ck` 已过期, 尝试从 {self._cookies_file} 加载")
+            self._load_credential()
+
+    @property
+    async def credential(self) -> Credential | None:
+        """哔哩哔哩登录凭证"""
+
+        if self._credential is None:
+            await self._init_credential()
+            return self._credential
+
+        if not await self._credential.check_valid():
+            logger.warning("哔哩哔哩凭证已过期, 请重新配置")
+            return None
+
+        if await self._credential.check_refresh():
+            logger.info("哔哩哔哩凭证需要刷新")
+            if self._credential.has_ac_time_value() and self._credential.has_bili_jct():
+                await self._credential.refresh()
+                logger.info(f"哔哩哔哩凭证刷新成功, 保存到 {self._cookies_file}")
+                self._save_credential()
+            else:
+                logger.warning("哔哩哔哩凭证刷新需要包含 `SESSDATA`, `ac_time_value` 项")
+
+        return self._credential
